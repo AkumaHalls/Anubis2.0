@@ -9,6 +9,7 @@ import logging
 import os
 import pickle
 import subprocess
+import sys
 import traceback
 from configparser import ConfigParser
 from copy import deepcopy
@@ -163,7 +164,11 @@ class BotPool:
                 traceback.print_exc()
 
         if not loop:
-            loop = asyncio.get_event_loop()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
 
         try:
             self.lavalink_instance = await loop.run_in_executor(
@@ -678,7 +683,10 @@ class BotPool:
 
             bot.http.token = token
 
-            bot.load_extension("jishaku")
+            try:
+                bot.load_extension("jishaku")
+            except Exception as e:
+                print(f"⚠️ - jishaku não carregado (incompatível com Python {sys.version_info.major}.{sys.version_info.minor}): {e}")
 
             if bot.config['INTERACTION_COMMAND_ONLY']:
 
@@ -833,7 +841,11 @@ class BotPool:
 
         load_modules_log = True
 
-        loop = asyncio.get_event_loop()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
         for k, v in all_tokens.items():
             load_bot(k, v, load_modules_log=load_modules_log)

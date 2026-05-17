@@ -1,25 +1,49 @@
-disnake==2.9.2
-python-dotenv
-user_agent
-requests>=2.31.0
-humanize
-motor
-tinymongo
-dnspython>=2.6.1
-psutil
-aiofiles
-disnake-jishaku
-packaging
-aiosqlite
-yt-dlp>=2024.08.06
-tornado
-emoji
-urllib3>=2.1.0
-async-timeout
-cachetools
-regex
-syncedlyrics
-pylrc
-python-Levenshtein
-nodriver==0.32
-undetected-chromedriver==3.5.5
+# Core
+disnake>=2.12.0,<3.0.0
+python-dotenv>=1.0.0
+
+# HTTP / Networking
+requests>=2.32.0
+aiohttp>=3.9.0
+aiofiles>=23.2.0
+urllib3>=2.2.0
+user-agent>=0.1.10
+
+# Database
+motor>=3.6.0
+tinymongo>=0.1.12
+dnspython>=2.7.0
+
+# Audio / Music
+yt-dlp>=2024.12.0
+wavelink>=3.5.0
+
+# Last.fm Integration
+syncedlyrics>=1.0.0
+pylrc>=0.1.0
+python-Levenshtein>=0.26.0
+
+# Web Dashboard
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+jinja2>=3.1.3,<3.1.4
+tornado>=6.4.0
+
+# SSL (Windows fix)
+certifi>=2024.12.0
+
+# Utilities
+psutil>=6.0.0
+packaging>=24.0
+cachetools>=5.5.0
+regex>=2024.0.0
+humanize>=4.11.0
+emoji>=2.14.0
+async-timeout>=5.0.0
+
+# YouTube Trusted Sessions (required by custom wavelink)
+nodriver>=0.32,<0.40
+undetected-chromedriver>=3.5.0
+
+# Dev / Debug
+disnake-jishaku>=2.6.0

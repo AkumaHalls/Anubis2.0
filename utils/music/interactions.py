@@ -1232,7 +1232,14 @@ class FavModalAdd(disnake.ui.Modal):
 
                     source = "[SC]:"
 
-                loop = self.view.bot.loop or asyncio.get_event_loop()
+                if self.view.bot.loop:
+                    loop = self.view.bot.loop
+                else:
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
 
                 try:
                     info = await loop.run_in_executor(None, lambda: self.view.bot.pool.ytdl.extract_info(base_url, download=False))

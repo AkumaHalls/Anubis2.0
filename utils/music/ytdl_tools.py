@@ -70,7 +70,11 @@ class YTDLTools:
                 raise GenericError("**Este link contém conteúdo para maiores de 18 anos!**")
 
             if not loop:
-                loop = asyncio.get_event_loop()
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
 
             data = await loop.run_in_executor(None, self.extract_info, url)
 

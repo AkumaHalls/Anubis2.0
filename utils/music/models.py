@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 exclude_tags = ["remix", "edit", "extend", "compilation", "mashup", "mixed"]
 exclude_tags_2 = ["extend", "compilation", "mashup", "nightcore", "8d", "mixed"]
-emoji_pattern = re.compile('<a?:.+?:\d+?>')
+emoji_pattern = re.compile(r'<a?:.+?:\d+?>')
 
 thread_archive_time = {
     60: 30,

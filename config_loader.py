@@ -14,15 +14,15 @@ bools = {
 DEFAULT_CONFIG = {
     "DEFAULT_PREFIX": "!!",
     "AUTO_SYNC_COMMANDS": True,
-    "OWNER_IDS": "260912891782365196",
+    "OWNER_IDS": "",
     "COMMAND_LOG": False,
     "EMBED_COLOR": None,
-    "BOT_ADD_REMOVE_LOG": 'https://discord.com/api/webhooks/1281794299415232534/edXB4hVVUQrT7DxrCLAY9uE3AB9I2yKNwtpUdLSg6p9XhiYzunnzbHkDZRSvmJAHULco',
-    "ERROR_REPORT_WEBHOOK": 'https://discord.com/api/webhooks/1281794299415232534/edXB4hVVUQrT7DxrCLAY9uE3AB9I2yKNwtpUdLSg6p9XhiYzunnzbHkDZRSvmJAHULco',
-    "AUTO_ERROR_REPORT_WEBHOOK": 'https://discord.com/api/webhooks/1281794299415232534/edXB4hVVUQrT7DxrCLAY9uE3AB9I2yKNwtpUdLSg6p9XhiYzunnzbHkDZRSvmJAHULco',
+    "BOT_ADD_REMOVE_LOG": '',
+    "ERROR_REPORT_WEBHOOK": '',
+    "AUTO_ERROR_REPORT_WEBHOOK": '',
     "INTERACTION_COMMAND_ONLY": False,
     "PRESENCE_INTERVAL": 900,
-    "SOURCE_REPO": "https://github.com/zRitsu/MuseHeart-MusicBot.git",
+    "SOURCE_REPO": "mailto:david_henrique_lopes@hotmail.com",
     "SUPPORT_SERVER": "",
     "ADDITIONAL_BOT_IDS": "",
     "INVITE_PERMISSIONS": 332892794064,
@@ -73,8 +73,8 @@ DEFAULT_CONFIG = {
     ##############################################
     ### Sistema de música - Suporte ao spotify ###
     ##############################################
-    "SPOTIFY_CLIENT_ID": '6f9cb59f727b41c4b471db9140fb9c29',
-    "SPOTIFY_CLIENT_SECRET": '13e16bc355b24125b9799e7045b0303c',
+    "SPOTIFY_CLIENT_ID": '',
+    "SPOTIFY_CLIENT_SECRET": '',
     "SPOTIFY_PLAYLIST_EXTRA_PAGE_LIMIT": 0,
 
     ################################################
@@ -98,7 +98,7 @@ DEFAULT_CONFIG = {
     "LAVALINK_RAM_LIMIT": 120,
     "LAVALINK_CPU_CORES": 2,
     "LAVALINK_FILE_URL": "https://github.com/zRitsu/LL-binaries/releases/download/0.0.1/Lavalink.jar",
-    "SEARCH_PROVIDERS": "scsearch",
+    "SEARCH_PROVIDERS": "ytsearch scsearch",
     "PREFER_YOUTUBE_NATIVE_PLAYBACK": True,
 
     ##################################################

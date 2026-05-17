@@ -345,7 +345,7 @@ class Music(commands.Cog):
 
         deafen_check = True
 
-        if isinstance(ctx, disnake.AppCmdInter) and ctx.application_command.name == self.connect.name:
+        if isinstance(ctx, disnake.ApplicationCommandInteraction) and ctx.application_command.name == self.connect.name:
 
             perms = channel.permissions_for(me)
 
@@ -1300,7 +1300,14 @@ class Music(commands.Cog):
 
                 else:
 
-                    loop = self.bot.loop or asyncio.get_event_loop()
+                    if self.bot.loop:
+                        loop = self.bot.loop
+                    else:
+                        try:
+                            loop = asyncio.get_running_loop()
+                        except RuntimeError:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
 
                     try:
                         await inter.response.defer(ephemeral=True)

@@ -4,7 +4,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from os import environ
+from pathlib import Path
 from traceback import print_exc
 from typing import TYPE_CHECKING, Optional
 
@@ -280,6 +282,303 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         bots_ws.remove(self)
 
 
+class APIHandler:
+    def set_default_headers(self):
+        self.set_header("Access-Control-Allow-Origin", "*")
+        self.set_header("Access-Control-Allow-Headers", "Content-Type")
+        self.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
+    def options(self):
+        self.set_status(204)
+        self.finish()
+
+
+class APIStatsHandler(APIHandler, tornado.web.RequestHandler):
+    def initialize(self, pool=None, config=None):
+        self.pool = pool
+        self.config = config
+
+    async def get(self):
+        try:
+            if not self.pool:
+                self.write({"error": "Pool not available"})
+                return
+            data = {
+                "bots": [],
+                "failed_bots": [],
+                "total_servers": 0,
+                "total_users": 0,
+                "active_players": 0,
+            }
+            for bot in self.pool.bots:
+                if bot.is_ready():
+                    guilds = bot.guilds or []
+                    bot_info = {
+                        "id": str(bot.user.id),
+                        "name": bot.user.name,
+                        "discriminator": bot.user.discriminator,
+                        "avatar": bot.user.display_avatar.replace(size=256, static_format="png").url,
+                        "guilds": len(guilds),
+                        "users": sum(g.member_count for g in guilds if g.member_count),
+                        "players": len(bot.music.players) if bot.music else 0,
+                        "uptime": str(datetime.now(timezone.utc) - bot.uptime).split(".")[0] if hasattr(bot, "uptime") and bot.uptime else "N/A",
+                    }
+                    data["bots"].append(bot_info)
+                    data["total_servers"] += bot_info["guilds"]
+                    data["total_users"] += bot_info["users"]
+                    data["active_players"] += bot_info["players"]
+            for name, err in self.pool.failed_bots.items():
+                data["failed_bots"].append({"name": name, "error": str(err)[:200]})
+            self.set_header("Content-Type", "application/json")
+            self.write(json.dumps(data))
+        except Exception as e:
+            self.set_header("Content-Type", "application/json")
+            self.set_status(500)
+            self.write(json.dumps({"error": str(e)}))
+
+
+class APIPlayersHandler(APIHandler, tornado.web.RequestHandler):
+    def initialize(self, pool=None, config=None):
+        self.pool = pool
+        self.config = config
+
+    async def get(self):
+        try:
+            players = []
+            if self.pool and self.pool.bots:
+                for bot in self.pool.bots:
+                    if not bot.is_ready():
+                        continue
+                    if not bot.music:
+                        continue
+                    for guild_id, player in bot.music.players.items():
+                        guild = bot.get_guild(guild_id)
+                        if not guild:
+                            continue
+                        track = player.current
+                        player_info = {
+                            "guild_id": str(guild_id),
+                            "guild_name": guild.name,
+                            "guild_icon": guild.icon.url if guild.icon else None,
+                            "channel": player.channel.name if hasattr(player, "channel") and player.channel else "N/A",
+                            "is_playing": player.is_playing if hasattr(player, "is_playing") else False,
+                            "is_paused": player.paused if hasattr(player, "paused") else False,
+                            "volume": player.volume if hasattr(player, "volume") else 100,
+                            "queue_size": len(player.queue) if hasattr(player, "queue") else 0,
+                            "bot_name": bot.user.name,
+                        }
+                        if track:
+                            player_info["track"] = {
+                                "title": track.title if hasattr(track, "title") else "Unknown",
+                                "author": track.author if hasattr(track, "author") else "Unknown",
+                                "uri": track.uri if hasattr(track, "uri") else "",
+                                "duration": track.duration if hasattr(track, "duration") else 0,
+                                "position": player.position if hasattr(player, "position") else 0,
+                                "thumbnail": track.thumbnail if hasattr(track, "thumbnail") else "",
+                            }
+                            if player_info["track"]["duration"] > 0:
+                                player_info["track"]["progress_pct"] = round(
+                                    (player_info["track"]["position"] / player_info["track"]["duration"]) * 100, 1
+                                )
+                            else:
+                                player_info["track"]["progress_pct"] = 0
+                        players.append(player_info)
+            self.set_header("Content-Type", "application/json")
+            self.write(json.dumps({"players": players}))
+        except Exception as e:
+            self.set_header("Content-Type", "application/json")
+            self.set_status(500)
+            self.write(json.dumps({"error": str(e)}))
+
+
+class APIServersHandler(APIHandler, tornado.web.RequestHandler):
+    def initialize(self, pool=None, config=None):
+        self.pool = pool
+        self.config = config
+
+    async def get(self):
+        try:
+            servers = []
+            if self.pool and self.pool.bots:
+                for bot in self.pool.bots:
+                    if not bot.is_ready():
+                        continue
+                    if not bot.music:
+                        continue
+                    for guild in bot.guilds:
+                        player = bot.music.players.get(guild.id)
+                        servers.append({
+                            "id": str(guild.id),
+                            "name": guild.name,
+                            "icon": guild.icon.url if guild.icon else None,
+                            "members": guild.member_count,
+                            "channels": len(guild.channels),
+                            "bot_name": bot.user.name,
+                            "has_player": player is not None,
+                            "is_playing": player.is_playing if player and hasattr(player, "is_playing") else False,
+                            "current_track": getattr(player.current, "title", None) if player and player.current else None,
+                        })
+            servers.sort(key=lambda s: s["members"], reverse=True)
+            self.set_header("Content-Type", "application/json")
+            self.write(json.dumps({"servers": servers}))
+        except Exception as e:
+            self.set_header("Content-Type", "application/json")
+            self.set_status(500)
+            self.write(json.dumps({"error": str(e)}))
+
+
+class APIConfigHandler(APIHandler, tornado.web.RequestHandler):
+    def initialize(self, pool=None, config=None):
+        self.pool = pool
+        self.config = config
+
+    async def get(self):
+        try:
+            safe_config = {}
+            for k, v in self.config.items():
+                if not any(x in str(k).upper() for x in ["TOKEN", "SECRET", "WEBHOOK"]):
+                    safe_config[k] = v
+            self.set_header("Content-Type", "application/json")
+            self.write(json.dumps(safe_config))
+        except Exception as e:
+            self.set_header("Content-Type", "application/json")
+            self.set_status(500)
+            self.write(json.dumps({"error": str(e)}))
+
+    async def post(self):
+        try:
+            body = json.loads(self.request.body)
+        except Exception:
+            self.set_status(400)
+            self.write({"error": "Invalid JSON"})
+            return
+
+        env_path = Path(".env")
+        if not env_path.exists():
+            self.set_status(404)
+            self.write({"error": ".env not found"})
+            return
+
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+        updated = []
+        changed = []
+        for line in lines:
+            stripped = line.strip()
+            if "=" in stripped and not stripped.startswith("#"):
+                key = stripped.split("=", 1)[0].strip()
+                if key in body:
+                    val = str(body[key])
+                    updated.append(f"{key}='{val}'")
+                    changed.append(key)
+                    continue
+            updated.append(line)
+
+        env_path.write_text("\n".join(updated), encoding="utf-8")
+        self.write({"success": True, "changed": changed})
+
+
+class APIPlayerControlHandler(APIHandler, tornado.web.RequestHandler):
+    def initialize(self, pool=None, config=None):
+        self.pool = pool
+        self.config = config
+
+    async def get(self, guild_id):
+        await self._handle_control(guild_id)
+
+    async def post(self, guild_id):
+        await self._handle_control(guild_id)
+
+    async def _handle_control(self, guild_id):
+        try:
+            self.set_header("Content-Type", "application/json")
+            action = self.get_argument("action", None)
+            if not action:
+                self.write(json.dumps({"success": False, "error": "action required"}))
+                return
+            if not self.pool or not self.pool.bots:
+                self.write(json.dumps({"success": False, "error": "Bot not available"}))
+                return
+            for bot in self.pool.bots:
+                if not bot.is_ready():
+                    continue
+                if not bot.music:
+                    continue
+                player = bot.music.players.get(int(guild_id))
+                if not player:
+                    continue
+                try:
+                    if action == "pause":
+                        await player.set_pause(not player.paused)
+                        self.write(json.dumps({"success": True, "action": "pause", "state": player.paused}))
+                    elif action == "skip":
+                        await player.stop()
+                        self.write(json.dumps({"success": True, "action": "skip"}))
+                    elif action == "stop":
+                        await player.stop()
+                        await player.disconnect()
+                        self.write(json.dumps({"success": True, "action": "stop"}))
+                    elif action.startswith("volume="):
+                        vol = max(0, min(100, int(action.split("=")[1])))
+                        await player.set_volume(vol)
+                        self.write(json.dumps({"success": True, "action": "volume", "volume": vol}))
+                    else:
+                        self.write(json.dumps({"success": False, "error": f"Unknown action: {action}"}))
+                    return
+                except Exception as e:
+                    self.write(json.dumps({"success": False, "error": str(e)}))
+                    return
+            self.write(json.dumps({"success": False, "error": "Player not found"}))
+        except Exception as e:
+            self.set_header("Content-Type", "application/json")
+            self.write(json.dumps({"success": False, "error": str(e)}))
+
+
+class APILogsHandler(APIHandler, tornado.web.RequestHandler):
+    def initialize(self, pool=None, config=None):
+        self.pool = pool
+        self.config = config
+
+    async def get(self):
+        limit = int(self.get_argument("limit", 50))
+        log_file = Path(".logs") / "disnake.log"
+        if not log_file.exists():
+            self.write({"logs": []})
+            return
+        try:
+            text = log_file.read_text(encoding="utf-8", errors="ignore")
+            lines = text.strip().split("\n")[-limit:]
+            result = [{"line": i + 1, "text": l} for i, l in enumerate(lines)]
+            self.set_header("Content-Type", "application/json")
+            self.write(json.dumps({"logs": result}))
+        except Exception:
+            self.write({"logs": []})
+
+
+class APIServerLeaveHandler(APIHandler, tornado.web.RequestHandler):
+    def initialize(self, pool=None, config=None):
+        self.pool = pool
+        self.config = config
+
+    async def post(self, guild_id):
+        if not self.pool or not self.pool.bots:
+            self.write({"success": False, "error": "Bot not available"})
+            return
+        for bot in self.pool.bots:
+            if not bot.is_ready():
+                continue
+            guild = bot.get_guild(int(guild_id))
+            if not guild:
+                continue
+            try:
+                await guild.leave()
+                self.write({"success": True, "guild_id": int(guild_id), "guild_name": guild.name})
+                return
+            except Exception as e:
+                self.write({"success": False, "error": str(e)})
+                return
+        self.write({"success": False, "error": "Guild not found"})
+
+
 class WSClient:
 
     def __init__(self, url: str, pool: BotPool):
@@ -424,6 +723,13 @@ def run_app(pool: BotPool, message: str = "", config: dict = None):
     app = tornado.web.Application([
         (r'/', IndexHandler, {'pool': pool, 'message': message, 'config': config}),
         (r'/ws', WebSocketHandler),
+        (r'/api/stats', APIStatsHandler, {'pool': pool, 'config': config}),
+        (r'/api/players', APIPlayersHandler, {'pool': pool, 'config': config}),
+        (r'/api/servers', APIServersHandler, {'pool': pool, 'config': config}),
+        (r'/api/config', APIConfigHandler, {'pool': pool, 'config': config}),
+        (r'/api/logs', APILogsHandler, {'pool': pool, 'config': config}),
+        (r'/api/player/(\d+)/control', APIPlayerControlHandler, {'pool': pool, 'config': config}),
+        (r'/api/server/(\d+)/leave', APIServerLeaveHandler, {'pool': pool, 'config': config}),
     ])
 
     app.listen(port=config.get("PORT") or environ.get("PORT", 80))

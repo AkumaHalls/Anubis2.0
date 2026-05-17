@@ -170,3 +170,13 @@ application.yml
 /.tmp/
 /.deployed
 /.lastfm_cache
+/.ytdl_cache/
+/config.json
+/guild_bots.json
+
+# Dashboard / Logs
+lavalink/logs/
+*.db
+*.sqlite3
+
+

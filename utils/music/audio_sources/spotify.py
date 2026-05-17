@@ -13,7 +13,11 @@ from typing import Optional, TYPE_CHECKING, Union
 from urllib.parse import quote
 
 import aiofiles
-from aiohttp import ClientSession
+import certifi
+import ssl
+from aiohttp import ClientSession, TCPConnector
+
+_SSL_CTX = ssl.create_default_context(cafile=certifi.where())
 
 from utils.music.converters import fix_characters, URL_REG
 from utils.music.errors import GenericError
@@ -55,7 +59,7 @@ class SpotifyClient:
 
         headers = {'Authorization': f'Bearer {await self.get_valid_access_token()}'}
 
-        async with ClientSession() as session:
+        async with ClientSession(connector=TCPConnector(ssl=_SSL_CTX)) as session:
             async with session.get(f"{self.base_url}/{path}", headers=headers, params=params) as response:
                 if response.status == 200:
                     return await response.json()
@@ -139,7 +143,7 @@ class SpotifyClient:
         try:
             if not self.client_id or not self.client_secret:
                 access_token_url = "https://open.spotify.com/get_access_token?reason=transport&productType=embed"
-                async with ClientSession() as session:
+                async with ClientSession(connector=TCPConnector(ssl=_SSL_CTX)) as session:
                     async with session.get(access_token_url) as response:
                         data = await response.json()
                         self.spotify_cache = {
@@ -162,7 +166,7 @@ class SpotifyClient:
                     'grant_type': 'client_credentials'
                 }
 
-                async with ClientSession() as session:
+                async with ClientSession(connector=TCPConnector(ssl=_SSL_CTX)) as session:
                     async with session.post(token_url, headers=headers, data=data) as response:
                         data = await response.json()
 

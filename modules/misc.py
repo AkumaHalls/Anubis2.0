@@ -636,7 +636,7 @@ class Misc(commands.Cog):
             embed.description += f"> 🎧 **⠂Ouvinte{'s'[:(lcount:=len(listeners))^1]} atua{'is'[:lcount^1] or 'l'}:** `{lcount:,}`\n"
 
         if bot.pool.commit:
-            embed.description += f"> 📥 **⠂Commit atual:** [`{bot.pool.commit[:7]}`]({bot.pool.remote_git_url}/commit/{bot.pool.commit})\n"
+            embed.description += f"> 📥 **⠂Commit atual:** `{bot.pool.commit[:7]}`\n"
 
         embed.description += f"> 🐍 **⠂Versão do Python:** `{platform.python_version()}`\n" \
                              f"> 📦 **⠂Versão do Disnake:** `{disnake.__version__}`\n" \
@@ -658,7 +658,7 @@ class Misc(commands.Cog):
             if user_data["custom_prefix"]:
                 embed.description += f"> ⌨️ **⠂Seu prefixo de usuário:** `{disnake.utils.escape_markdown(user_data['custom_prefix'], as_needed=True)}`\n"
 
-        links = "[`[Source]`](https://github.com/zRitsu/MuseHeart-MusicBot)"
+        links = "[`[Source - R$500]`](mailto:david_henrique_lopes@hotmail.com)"
 
         if bot.config["SUPPORT_SERVER"]:
             links = f"[`[Suporte]`]({bot.config['SUPPORT_SERVER']})  **|** {links}"
