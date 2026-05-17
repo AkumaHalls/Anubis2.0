@@ -2,9 +2,7 @@ version: '3.8'
 
 services:
   anubis-bot:
-    build:
-      context: .
-      network: host
+    build: .
     container_name: anubis-music-bot
     restart: unless-stopped
     ports:
