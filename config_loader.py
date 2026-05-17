@@ -14,7 +14,7 @@ bools = {
 DEFAULT_CONFIG = {
     "DEFAULT_PREFIX": "!!",
     "AUTO_SYNC_COMMANDS": True,
-    "OWNER_IDS": "",
+    "OWNER_IDS": "260912891782365196",
     "COMMAND_LOG": False,
     "EMBED_COLOR": None,
     "BOT_ADD_REMOVE_LOG": '',
@@ -73,8 +73,8 @@ DEFAULT_CONFIG = {
     ##############################################
     ### Sistema de música - Suporte ao spotify ###
     ##############################################
-    "SPOTIFY_CLIENT_ID": '',
-    "SPOTIFY_CLIENT_SECRET": '',
+    "SPOTIFY_CLIENT_ID": '6f9cb59f727b41c4b471db9140fb9c29',
+    "SPOTIFY_CLIENT_SECRET": '13e16bc355b24125b9799e7045b0303c',
     "SPOTIFY_PLAYLIST_EXTRA_PAGE_LIMIT": 0,
 
     ################################################
