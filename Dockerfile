@@ -2,21 +2,20 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Correção de servidores de download para contornar o bloqueio da Oracle Cloud
-RUN sed -i 's/deb.debian.org/ftp.br.debian.org/g' /etc/apt/sources.list 2>/dev/null || true
-RUN sed -i 's/deb.debian.org/ftp.br.debian.org/g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
+# Correção de servidores de download forçando a rede nativa da VPS
+RUN --network=host sed -i 's/deb.debian.org/ftp.br.debian.org/g' /etc/apt/sources.list 2>/dev/null || true
 
-# Instalação das dependências forçando IPv4 e usando o espelho brasileiro externo
-RUN apt-get -o Acquire::ForceIPv4=true update && apt-get -o Acquire::ForceIPv4=true install -y \
+# Instalação das dependências usando diretamente a rede host e IPv4
+RUN --network=host apt-get -o Acquire::ForceIPv4=true update && apt-get -o Acquire::ForceIPv4=true install -y \
     openjdk-17-jdk-headless \
     git \
     ffmpeg \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copia o requirements e instala as dependências do Python
+# Copia o requirements e instala as dependências do Python usando a rede host
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --network=host pip install --no-cache-dir -r requirements.txt
 
 # Copia o restante do código da aplicação
 COPY . .
