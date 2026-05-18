@@ -1,5 +1,7 @@
+import asyncio
 import os
 import sys
+import traceback as _tb
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,6 +17,7 @@ from config_loader import load_config
 
 config = load_config()
 BOT_API_URL = os.environ.get("BOT_API_URL", "http://localhost:8080")
+PROXY_TIMEOUT = int(os.environ.get("PROXY_TIMEOUT", "30"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -394,14 +397,12 @@ document.addEventListener('DOMContentLoaded', loadConfig);
 # Tornado API running on BOT_API_URL (http://localhost:8080).
 # This avoids CORS issues and hardcoded public IPs.
 
-import traceback as _tb
-
 OFFLINE = {"error": "API Offline"}
 
 async def _proxy(method: str, endpoint: str, **kwargs) -> JSONResponse:
     url = f"{BOT_API_URL}/{endpoint.lstrip('/')}"
     try:
-        async with app.state.http_session.request(method, url, timeout=kwargs.pop("timeout", 10), **kwargs) as resp:
+        async with app.state.http_session.request(method, url, timeout=kwargs.pop("timeout", PROXY_TIMEOUT), **kwargs) as resp:
             try:
                 data = await resp.json()
             except Exception:
@@ -412,6 +413,8 @@ async def _proxy(method: str, endpoint: str, **kwargs) -> JSONResponse:
         return JSONResponse(OFFLINE, status_code=503)
     except ClientError:
         return JSONResponse(OFFLINE, status_code=503)
+    except asyncio.TimeoutError:
+        return JSONResponse(OFFLINE, status_code=504)
     except Exception:
         _tb.print_exc()
         return JSONResponse(OFFLINE, status_code=500)
@@ -426,7 +429,7 @@ async def proxy_api_players():
 
 @app.get("/api/servers")
 async def proxy_api_servers():
-    return await _proxy("GET", "/api/servers", timeout=15)
+    return await _proxy("GET", "/api/servers")
 
 @app.get("/api/config")
 async def proxy_api_config_get():
@@ -449,7 +452,7 @@ async def proxy_api_player_control(guild_id: str, request: Request):
 
 @app.post("/api/server/{guild_id}/leave")
 async def proxy_api_server_leave(guild_id: str):
-    return await _proxy("POST", f"/api/server/{guild_id}/leave", timeout=15)
+    return await _proxy("POST", f"/api/server/{guild_id}/leave")
 
 @app.get("/api/{path:path}")
 async def proxy_api_catch_all(path: str, request: Request):

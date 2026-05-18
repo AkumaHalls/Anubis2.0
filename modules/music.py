@@ -6929,6 +6929,46 @@ class Music(commands.Cog):
 
                     if not tracks:
 
+                        if is_yt_source and self.bot.config.get("USE_YTDL", True):
+                            try:
+                                import yt_dlp as _ydl
+                                _opts = {
+                                    'format': 'bestaudio/best',
+                                    'noplaylist': True,
+                                    'nocheckcertificate': True,
+                                    'quiet': True,
+                                    'no_warnings': True,
+                                    'extract_flat': 'in_playlist',
+                                    'extractor_args': {
+                                        'youtube': {
+                                            'skip': ['hls', 'dash', 'translated_subs'],
+                                            'player_skip': ['js', 'configs', 'webpage'],
+                                            'player_client': ['android_creator'],
+                                            'max_comments': [0],
+                                        },
+                                    },
+                                }
+                                raw = await self.bot.loop.run_in_executor(
+                                    None, lambda: _ydl.YoutubeDL(_opts).extract_info(query, download=False)
+                                )
+                                if raw and raw.get('url'):
+                                    t = PartialTrack(
+                                        uri=raw['url'],
+                                        title=raw.get('title', 'Unknown'),
+                                        author=raw.get('uploader', 'Unknown'),
+                                        thumb=raw.get('thumbnail', ''),
+                                        duration=(raw.get('duration') or 0) * 1000,
+                                        requester=user.id,
+                                        source_name="http",
+                                    )
+                                    t.info["isSeekable"] = True
+                                    tracks = [t]
+                                    node = nodes[0] if nodes else node
+                            except Exception as e:
+                                exceptions.add(repr(e))
+
+                    if not tracks:
+
                         txt = "\n".join(exceptions)
 
                         if is_yt_source and "Video returned by YouTube isn't what was requested" in txt:
