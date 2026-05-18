@@ -42,7 +42,8 @@ services:
       - anubis_app_commands_sync:/app/.app_commands_sync_data
 
   anubis-dashboard:
-    image: anubis-image
+    build: .
+    image: anubis-image-dash
     container_name: anubis-dashboard
     restart: unless-stopped
     ports:

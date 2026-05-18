@@ -6931,7 +6931,10 @@ class Music(commands.Cog):
 
                         if is_yt_source and self.bot.config.get("USE_YTDL", True):
                             try:
+                                from utils.music.youtube_cookie_manager import youtube_cookie_manager as _ycm
                                 import yt_dlp as _ydl
+                                _xtra = dict(_ycm.get_ytdl_extractor_args())
+                                _cfile = _ycm.get_ytdl_cookiefile()
                                 _opts = {
                                     'format': 'bestaudio/best',
                                     'noplaylist': True,
@@ -6939,14 +6942,8 @@ class Music(commands.Cog):
                                     'quiet': True,
                                     'no_warnings': True,
                                     'extract_flat': 'in_playlist',
-                                    'extractor_args': {
-                                        'youtube': {
-                                            'skip': ['hls', 'dash', 'translated_subs'],
-                                            'player_skip': ['js', 'configs', 'webpage'],
-                                            'player_client': ['android_creator'],
-                                            'max_comments': [0],
-                                        },
-                                    },
+                                    'cookiefile': _cfile,
+                                    'extractor_args': _xtra,
                                 }
                                 raw = await self.bot.loop.run_in_executor(
                                     None, lambda: _ydl.YoutubeDL(_opts).extract_info(query, download=False)
