@@ -3,9 +3,6 @@ server:
   address: 0.0.0.0
   http2:
     enabled: false
-  compression: none
-  maxHeadersSize: 8KB
-  maxInitialLineLength: 4KB
 
 lavalink:
   server:
@@ -22,30 +19,6 @@ lavalink:
       bandcamp: true
       http: true
       local: false
-    youtubeConfig:
-      enabled: true
-      allowSearch: true
-      allowDirectVideo: true
-      allowDirectPlaylist: true
-      clients:
-        - ANDROID
-        - MUSIC
-        - WEB_REMIX
-    rateLimit:
-      enabled: true
-      strategy: "loadBalance"
-      triggerThreshold: 5
-      penalty: 50
-      cooldown: 5
-
-plugins:
-  youtube:
-    enabled: true
-    allowSearch: true
-    clients:
-      - ANDROID
-      - MUSIC
-      - WEB_REMIX
 
 metrics:
   prometheus:

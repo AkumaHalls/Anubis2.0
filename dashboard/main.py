@@ -7,6 +7,7 @@ import aiohttp
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from aiohttp.client_exceptions import ClientConnectorError, ClientError
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -393,74 +394,70 @@ document.addEventListener('DOMContentLoaded', loadConfig);
 # Tornado API running on BOT_API_URL (http://localhost:8080).
 # This avoids CORS issues and hardcoded public IPs.
 
+import traceback as _tb
+
+OFFLINE = {"error": "API Offline"}
+
+async def _proxy(method: str, endpoint: str, **kwargs) -> JSONResponse:
+    url = f"{BOT_API_URL}/{endpoint.lstrip('/')}"
+    try:
+        async with app.state.http_session.request(method, url, timeout=kwargs.pop("timeout", 10), **kwargs) as resp:
+            try:
+                data = await resp.json()
+            except Exception:
+                text = await resp.text()
+                return JSONResponse({"error": text}, status_code=resp.status)
+            return JSONResponse(data)
+    except ClientConnectorError:
+        return JSONResponse(OFFLINE, status_code=503)
+    except ClientError:
+        return JSONResponse(OFFLINE, status_code=503)
+    except Exception:
+        _tb.print_exc()
+        return JSONResponse(OFFLINE, status_code=500)
+
 @app.get("/api/stats")
 async def proxy_api_stats():
-    async with app.state.http_session.get(f"{BOT_API_URL}/api/stats", timeout=10) as resp:
-        data = await resp.json()
-        return JSONResponse(data)
+    return await _proxy("GET", "/api/stats")
 
 @app.get("/api/players")
 async def proxy_api_players():
-    async with app.state.http_session.get(f"{BOT_API_URL}/api/players", timeout=10) as resp:
-        data = await resp.json()
-        return JSONResponse(data)
+    return await _proxy("GET", "/api/players")
 
 @app.get("/api/servers")
 async def proxy_api_servers():
-    async with app.state.http_session.get(f"{BOT_API_URL}/api/servers", timeout=15) as resp:
-        data = await resp.json()
-        return JSONResponse(data)
+    return await _proxy("GET", "/api/servers", timeout=15)
 
 @app.get("/api/config")
 async def proxy_api_config_get():
-    async with app.state.http_session.get(f"{BOT_API_URL}/api/config", timeout=10) as resp:
-        data = await resp.json()
-        return JSONResponse(data)
+    return await _proxy("GET", "/api/config")
 
 @app.post("/api/config")
 async def proxy_api_config_post(request: Request):
     body = await request.json()
-    async with app.state.http_session.post(f"{BOT_API_URL}/api/config", json=body, timeout=10) as resp:
-        data = await resp.json()
-        return JSONResponse(data)
+    return await _proxy("POST", "/api/config", json=body)
 
 @app.get("/api/logs")
 async def proxy_api_logs(request: Request):
     limit = request.query_params.get("limit", 200)
-    async with app.state.http_session.get(f"{BOT_API_URL}/api/logs?limit={limit}", timeout=10) as resp:
-        data = await resp.json()
-        return JSONResponse(data)
+    return await _proxy("GET", f"/api/logs?limit={limit}")
 
 @app.get("/api/player/{guild_id}/control")
 async def proxy_api_player_control(guild_id: str, request: Request):
     action = request.query_params.get("action", "")
-    async with app.state.http_session.get(
-        f"{BOT_API_URL}/api/player/{guild_id}/control?action={action}", timeout=10
-    ) as resp:
-        data = await resp.json()
-        return JSONResponse(data)
+    return await _proxy("GET", f"/api/player/{guild_id}/control?action={action}")
 
 @app.post("/api/server/{guild_id}/leave")
 async def proxy_api_server_leave(guild_id: str):
-    async with app.state.http_session.post(
-        f"{BOT_API_URL}/api/server/{guild_id}/leave", timeout=15
-    ) as resp:
-        data = await resp.json()
-        return JSONResponse(data)
+    return await _proxy("POST", f"/api/server/{guild_id}/leave", timeout=15)
 
 @app.get("/api/{path:path}")
 async def proxy_api_catch_all(path: str, request: Request):
     qs = str(request.query_params)
-    url = f"{BOT_API_URL}/api/{path}"
+    endpoint = f"/api/{path}"
     if qs:
-        url += f"?{qs}"
-    async with app.state.http_session.get(url, timeout=10) as resp:
-        try:
-            data = await resp.json()
-        except Exception:
-            text = await resp.text()
-            return JSONResponse({"error": text})
-        return JSONResponse(data)
+        endpoint += f"?{qs}"
+    return await _proxy("GET", endpoint)
 
 def run(host="0.0.0.0", port=3000):
     import uvicorn

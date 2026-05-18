@@ -200,22 +200,18 @@ def run_lavalink(
 
     clear_plugins = False
 
+    for filename, url in (
+        ("Lavalink.jar", lavalink_file_url),
+        ("application.yml", "https://github.com/zRitsu/LL-binaries/releases/download/0.0.1/application.yml"),
+    ):
+        if download_file(url, filename):
+            clear_plugins = True
+
     if not os.path.isfile("application.yml"):
         if os.path.isfile("application.template.yml"):
             import shutil as _su
             _su.copy2("application.template.yml", "application.yml")
-            print("📄 - application.yml copiado do template local")
-        else:
-            for filename, url in (
-                ("application.yml", "https://github.com/zRitsu/LL-binaries/releases/download/0.0.1/application.yml"),
-            ):
-                if download_file(url, filename):
-                    clear_plugins = True
-
-    for filename, url in (
-        ("Lavalink.jar", lavalink_file_url),
-    ):
-        if download_file(url, filename):
+            print("📄 - application.yml copiado do template local (fallback)")
             clear_plugins = True
 
     if lavalink_cpu_cores >= 1:
