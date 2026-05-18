@@ -3,8 +3,9 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import aiohttp
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -16,8 +17,10 @@ BOT_API_URL = os.environ.get("BOT_API_URL", "http://localhost:8080")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print(f"Web Dashboard - API do bot: {BOT_API_URL}")
-    yield
+    print(f"Web Dashboard - API do bot (backend): {BOT_API_URL}")
+    async with aiohttp.ClientSession() as session:
+        app.state.http_session = session
+        yield
 
 app = FastAPI(title="Anubis Dashboard", description="Painel de Controle do Anubis Music Bot", version="2.0.0", lifespan=lifespan)
 
@@ -34,7 +37,7 @@ PAGE = """<!DOCTYPE html>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link href="/static/css/style.css" rel="stylesheet">
-<script>var API='"""+BOT_API_URL+"""';</script>
+<script>var API='';</script>
 </head>
 <body class="bg-[#0d1117] text-gray-200 min-h-screen">
 <div class="flex h-screen overflow-hidden">
@@ -385,13 +388,87 @@ async function saveConfig() {
 document.addEventListener('DOMContentLoaded', loadConfig);
 </script>""", "settings"))
 
+# ─── API Proxy Routes ────────────────────────────────────────────────
+# Proxies requests from the frontend (same origin) to the internal
+# Tornado API running on BOT_API_URL (http://localhost:8080).
+# This avoids CORS issues and hardcoded public IPs.
+
+@app.get("/api/stats")
+async def proxy_api_stats():
+    async with app.state.http_session.get(f"{BOT_API_URL}/api/stats", timeout=10) as resp:
+        data = await resp.json()
+        return JSONResponse(data)
+
+@app.get("/api/players")
+async def proxy_api_players():
+    async with app.state.http_session.get(f"{BOT_API_URL}/api/players", timeout=10) as resp:
+        data = await resp.json()
+        return JSONResponse(data)
+
+@app.get("/api/servers")
+async def proxy_api_servers():
+    async with app.state.http_session.get(f"{BOT_API_URL}/api/servers", timeout=15) as resp:
+        data = await resp.json()
+        return JSONResponse(data)
+
+@app.get("/api/config")
+async def proxy_api_config_get():
+    async with app.state.http_session.get(f"{BOT_API_URL}/api/config", timeout=10) as resp:
+        data = await resp.json()
+        return JSONResponse(data)
+
+@app.post("/api/config")
+async def proxy_api_config_post(request: Request):
+    body = await request.json()
+    async with app.state.http_session.post(f"{BOT_API_URL}/api/config", json=body, timeout=10) as resp:
+        data = await resp.json()
+        return JSONResponse(data)
+
+@app.get("/api/logs")
+async def proxy_api_logs(request: Request):
+    limit = request.query_params.get("limit", 200)
+    async with app.state.http_session.get(f"{BOT_API_URL}/api/logs?limit={limit}", timeout=10) as resp:
+        data = await resp.json()
+        return JSONResponse(data)
+
+@app.get("/api/player/{guild_id}/control")
+async def proxy_api_player_control(guild_id: str, request: Request):
+    action = request.query_params.get("action", "")
+    async with app.state.http_session.get(
+        f"{BOT_API_URL}/api/player/{guild_id}/control?action={action}", timeout=10
+    ) as resp:
+        data = await resp.json()
+        return JSONResponse(data)
+
+@app.post("/api/server/{guild_id}/leave")
+async def proxy_api_server_leave(guild_id: str):
+    async with app.state.http_session.post(
+        f"{BOT_API_URL}/api/server/{guild_id}/leave", timeout=15
+    ) as resp:
+        data = await resp.json()
+        return JSONResponse(data)
+
+@app.get("/api/{path:path}")
+async def proxy_api_catch_all(path: str, request: Request):
+    qs = str(request.query_params)
+    url = f"{BOT_API_URL}/api/{path}"
+    if qs:
+        url += f"?{qs}"
+    async with app.state.http_session.get(url, timeout=10) as resp:
+        try:
+            data = await resp.json()
+        except Exception:
+            text = await resp.text()
+            return JSONResponse({"error": text})
+        return JSONResponse(data)
+
 def run(host="0.0.0.0", port=3000):
     import uvicorn
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"  Anubis Web Dashboard")
     print(f"  URL: http://localhost:{port}")
-    print(f"  API do Bot: {BOT_API_URL}")
-    print(f"{'='*50}\n")
+    print(f"  API do Bot (backend): {BOT_API_URL}")
+    print(f"{'=' * 50}\n")
     uvicorn.run(app, host=host, port=port, log_level="info")
 
 if __name__ == "__main__":

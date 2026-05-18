@@ -28,6 +28,7 @@ services:
       - CONNECT_LOCAL_LAVALINK=${CONNECT_LOCAL_LAVALINK:-true}
       - LAVALINK_FILE_URL=${LAVALINK_FILE_URL:-https://github.com/lavalink-devs/lavalink/releases/download/4.2.2/Lavalink.jar}
       - ENABLE_COMMANDS_COOLDOWN=${ENABLE_COMMANDS_COOLDOWN:-true}
+      - USE_YTDL=${USE_YTDL:-true}
       - MESSAGE_CONTENT_INTENT=${MESSAGE_CONTENT_INTENT:-true}
       - GUILD_MESSAGES_INTENT=${GUILD_MESSAGES_INTENT:-true}
       - VOICE_STATES_INTENT=${VOICE_STATES_INTENT:-true}
@@ -39,6 +40,18 @@ services:
       - anubis_logs:/app/.logs
       - anubis_ytdl_cache:/app/.ytdl_cache
       - anubis_app_commands_sync:/app/.app_commands_sync_data
+
+  anubis-dashboard:
+    image: anubis-image
+    container_name: anubis-dashboard
+    restart: unless-stopped
+    ports:
+      - "2500:3000"
+    command: ["python", "-m", "uvicorn", "dashboard.main:app", "--host", "0.0.0.0", "--port", "3000", "--log-level", "info"]
+    environment:
+      - BOT_API_URL=http://anubis-bot:8080
+    depends_on:
+      - anubis-bot
 
 volumes:
   anubis_data:

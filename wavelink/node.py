@@ -32,6 +32,7 @@ from typing import Any, Callable, Dict, Optional, Union, List
 from urllib.parse import quote
 
 from utils.music.youtube_trusted_session_generator import Browser
+from utils.music.youtube_cookie_manager import youtube_cookie_manager
 from .backoff import ExponentialBackoff
 from .errors import *
 from .player import Player, Track, TrackPlaylist
@@ -242,6 +243,22 @@ class Node:
 
         __log__.info(f'NODE | {self.identifier} connected:: {self.__repr__()}')
 
+        asyncio.ensure_future(self._auto_refresh_youtube_token())
+
+    async def _auto_refresh_youtube_token(self):
+        try:
+            if youtube_cookie_manager.has_token:
+                await youtube_cookie_manager.inject_into_node(self)
+                return
+            rest = self.rest_uri
+            pw = self.password
+            sess = self.session
+            ok = await youtube_cookie_manager.refresh_from_lavalink(rest, pw, sess)
+            if ok:
+                await youtube_cookie_manager.inject_into_node(self)
+        except Exception:
+            pass
+
     async def refresh_potoken(self, sandbox=True, browser_executable_path=None):
 
         browser = Browser()
@@ -255,17 +272,20 @@ class Node:
             await browser.start(sandbox=sandbox, browser_executable_path=browser_executable_path, ytid=ytid)
         except Exception as e:
             if not browser.data:
-                raise e
+                traceback.print_exc()
             else:
                 traceback.print_exc()
 
-        async with self.session.post(url=f"{self.rest_uri}/youtube",
-            json={
-              "poToken": browser.data["po_token"],
-              "visitorData": browser.data["visitor_data"]
-            }, headers=self._websocket.headers
-        ) as r:
-            return f"{r.status}: {await r.text()}"
+        if browser.data:
+            async with self.session.post(url=f"{self.rest_uri}/youtube",
+                json={
+                  "poToken": browser.data["po_token"],
+                  "visitorData": browser.data["visitor_data"]
+                }, headers=self._websocket.headers
+            ) as r:
+                return f"{r.status}: {await r.text()}"
+        else:
+            return await youtube_cookie_manager.inject_into_node(self) or "no token"
 
     async def update_player(self, guild_id: int, data: dict, replace: bool = False):
 

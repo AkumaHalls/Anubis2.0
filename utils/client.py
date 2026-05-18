@@ -894,6 +894,9 @@ class BotPool:
 
             self.node_check(LAVALINK_SERVERS, loop=loop, start_local=start_local)
 
+        from utils.music.youtube_cookie_manager import youtube_cookie_manager
+        loop.create_task(youtube_cookie_manager.start_periodic_refresh(self, interval=self.config.get("YT_COOKIE_REFRESH_INTERVAL", 3600)))
+
         if self.config["RUN_RPC_SERVER"]:
 
             self.playlist_cache_updater_task = loop.create_task(self.playlist_cache_updater())

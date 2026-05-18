@@ -146,6 +146,7 @@ DEFAULT_CONFIG = {
     ### Tests ####
     ##############
     "USE_YTDL": True,
+    "YT_COOKIE_REFRESH_INTERVAL": 3600,
     "FORCE_USE_DEEZER_CLIENT": False,
     "SILENT_PUBLICBOT_WARNING": False,
     "DBCACHE_SIZE": 1000,
@@ -211,6 +212,7 @@ def load_config():
         "PLAYLIST_CACHE_SIZE",
         "PLAYLIST_CACHE_TTL",
         "SPOTIFY_PLAYLIST_EXTRA_PAGE_LIMIT",
+        "YT_COOKIE_REFRESH_INTERVAL",
     ]:
         try:
             new_value = int(CONFIG[i])

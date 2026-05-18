@@ -1,0 +1,61 @@
+server:
+  port: 8090
+  address: 0.0.0.0
+  http2:
+    enabled: false
+  compression: none
+  maxHeadersSize: 8KB
+  maxInitialLineLength: 4KB
+
+lavalink:
+  server:
+    password: "youshallnotpass"
+    bufferDurationMs: 400
+    frameBufferDurationMs: 5000
+    opusEncodingQuality: 10
+    resamplingQuality: LOW
+    keepAliveTimeout: 30
+    gcDuration: 30
+    sources:
+      youtube: true
+      soundcloud: true
+      bandcamp: true
+      http: true
+      local: false
+    youtubeConfig:
+      enabled: true
+      allowSearch: true
+      allowDirectVideo: true
+      allowDirectPlaylist: true
+      clients:
+        - ANDROID
+        - MUSIC
+        - WEB_REMIX
+    rateLimit:
+      enabled: true
+      strategy: "loadBalance"
+      triggerThreshold: 5
+      penalty: 50
+      cooldown: 5
+
+plugins:
+  youtube:
+    enabled: true
+    allowSearch: true
+    clients:
+      - ANDROID
+      - MUSIC
+      - WEB_REMIX
+
+metrics:
+  prometheus:
+    enabled: false
+
+sentry:
+  enabled: false
+
+logging:
+  level:
+    root: INFO
+    lavalink: INFO
+    com.sedmelluq: INFO
