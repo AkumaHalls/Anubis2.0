@@ -11,6 +11,15 @@ YT_USER_COOKIE_FILE = os.path.join(os.getcwd(), "youtube_cookies_user.txt")
 
 
 def _ensure_cookie_file(visitor_data: str = "", po_token: str = ""):
+    if not os.path.isfile(YT_USER_COOKIE_FILE):
+        env_cookies = os.environ.get("YT_USER_COOKIES", "").strip()
+        if env_cookies:
+            try:
+                with open(YT_USER_COOKIE_FILE, "w", encoding="utf-8") as f:
+                    f.write(env_cookies)
+                logger.info("Cookies do usuario restaurados da variavel de ambiente YT_USER_COOKIES")
+            except Exception as e:
+                logger.warning("Falha ao escrever cookies do env var: %s", e)
     if os.path.isfile(YT_USER_COOKIE_FILE):
         logger.info("Usando cookies fornecidos pelo usuario: %s", YT_USER_COOKIE_FILE)
         return

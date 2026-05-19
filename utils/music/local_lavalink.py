@@ -73,7 +73,8 @@ def run_lavalink(
         lavalink_ram_limit: int = 100,
         lavalink_additional_sleep: int = 0,
         lavalink_cpu_cores: int = 1,
-        use_jabba: bool = False
+        use_jabba: bool = False,
+        yt_oauth_refresh_token: str = "",
 ):
     arch = platform.machine().lower()
     if arch in ("x86_64", "amd64"):
@@ -213,6 +214,22 @@ def run_lavalink(
             _su.copy2("application.template.yml", "application.yml")
             print("application.yml copiado do template local (fallback)")
 
+    if yt_oauth_refresh_token and os.path.isfile("application.yml"):
+        try:
+            with open("application.yml", "r", encoding="utf-8") as f:
+                content = f.read()
+            old_line = 'refreshToken: ""'
+            new_line = f'refreshToken: "{yt_oauth_refresh_token}"'
+            if old_line in content:
+                content = content.replace(old_line, new_line)
+                with open("application.yml", "w", encoding="utf-8") as f:
+                    f.write(content)
+                print("OAuth2 refresh token configurado no application.yml")
+            else:
+                print("AVISO: Não foi possível localizar 'refreshToken' no application.yml para configurar OAuth2")
+        except Exception as e:
+            print(f"AVISO: Erro ao configurar OAuth2 no application.yml: {e}")
+
     if lavalink_cpu_cores >= 1:
         java_cmd += f" -XX:ActiveProcessorCount={lavalink_cpu_cores}"
 
@@ -236,7 +253,24 @@ def run_lavalink(
     print("🌋 - Iniciando o servidor Lavalink (dependendo da hospedagem o lavalink pode demorar iniciar, "
           "o que pode ocorrer falhas em algumas tentativas de conexão até ele iniciar totalmente).")
 
-    lavalink_process = subprocess.Popen(java_cmd.split(), stdout=subprocess.DEVNULL)
+    lavalink_process = subprocess.Popen(
+        java_cmd.split(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+        bufsize=1,
+    )
+
+    def _forward_lavalink_output():
+        for line in iter(lavalink_process.stdout.readline, ""):
+            if line:
+                print(f"[Lavalink] {line}", end="")
+                if "user_code" in line.lower() or "please authenticate" in line.lower() or "device?user_code" in line.lower():
+                    print("\n⚠️  URL OAuth2 do YouTube detectada! Acesse o link acima para autenticar no Lavalink.\n")
+
+    import threading
+    _forward_thread = threading.Thread(target=_forward_lavalink_output, daemon=True)
+    _forward_thread.start()
 
     if lavalink_additional_sleep:
         print(f"🕙 - Aguarde {lavalink_additional_sleep} segundos...")

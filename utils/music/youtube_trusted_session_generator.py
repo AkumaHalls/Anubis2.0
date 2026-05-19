@@ -58,7 +58,7 @@ class YouTubeSessionGenerator:
             "User-Agent": self._random_ua(),
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7",
-            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Encoding": "gzip, deflate",
             "DNT": "1",
             "Connection": "keep-alive",
             "Upgrade-Insecure-Requests": "1",
@@ -109,19 +109,22 @@ class YouTubeSessionGenerator:
         return f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{cv}.0.0.0 Safari/537.36"
 
     async def _patch_nodriver_prepare_headless(self):
-        import nodriver.core.connection as conn_mod
-        original = getattr(conn_mod.Connection, '_prepare_headless', None)
-        if original is None:
-            return
-        async def patched_prepare_headless(self_conn):
-            try:
-                return await original(self_conn)
-            except TypeError as e:
-                if "cannot unpack non-iterable" in str(e):
-                    logger.debug("Contornado bug nodriver _prepare_headless (NoneType unpack)")
-                    return
-                raise
-        conn_mod.Connection._prepare_headless = patched_prepare_headless
+        try:
+            import nodriver.core.connection as conn_mod
+            original = getattr(conn_mod.Connection, '_prepare_headless', None)
+            if original is None:
+                return
+            async def patched_prepare_headless(self_conn):
+                try:
+                    return await original(self_conn)
+                except TypeError as e:
+                    if "cannot unpack non-iterable" in str(e):
+                        logger.debug("Contornado bug nodriver _prepare_headless (NoneType unpack)")
+                        return
+                    raise
+            conn_mod.Connection._prepare_headless = patched_prepare_headless
+        except Exception as e:
+            logger.debug("Nao foi possivel aplicar patch nodriver _prepare_headless: %s", e)
 
     async def _ensure_browser_executable(self) -> Optional[str]:
         machine = os.uname().machine if hasattr(os, 'uname') else ""

@@ -38,6 +38,8 @@ services:
       - GUILDS_INTENT=${GUILDS_INTENT:-true}
       - MEMBERS_INTENT=${MEMBERS_INTENT:-true}
       - PRESENCES_INTENT=${PRESENCES_INTENT:-true}
+      - YT_OAUTH_REFRESH_TOKEN=${YT_OAUTH_REFRESH_TOKEN:-}
+      - YT_USER_COOKIES=${YT_USER_COOKIES:-}
       - CHROME_PATH=/usr/bin/chromium
       - CHROMIUM_PATH=/usr/bin/chromium
     volumes:

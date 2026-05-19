@@ -100,6 +100,7 @@ DEFAULT_CONFIG = {
     "LAVALINK_FILE_URL": "https://github.com/zRitsu/LL-binaries/releases/download/0.0.1/Lavalink.jar",
     "SEARCH_PROVIDERS": "ytsearch scsearch",
     "PREFER_YOUTUBE_NATIVE_PLAYBACK": True,
+    "YT_OAUTH_REFRESH_TOKEN": "",
 
     ##################################################
     ### Sistema de música - Integração com Last.fm ###
