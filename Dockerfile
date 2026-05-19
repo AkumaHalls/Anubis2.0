@@ -1,61 +1,31 @@
-version: '3.8'
+FROM python:3.11-slim-bookworm AS base-image
 
-services:
-  anubis-bot:
-    image: anubis-image
-    container_name: anubis-music-bot
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    environment:
-      - TOKEN=${TOKEN}
-      - DEFAULT_PREFIX=${DEFAULT_PREFIX:-!!}
-      - MONGO=${MONGO:-}
-      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
-      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
-      - LASTFM_KEY=${LASTFM_KEY:-}
-      - LASTFM_SECRET=${LASTFM_SECRET:-}
-      - OWNER_IDS=${OWNER_IDS:-}
-      - SUPPORT_SERVER=${SUPPORT_SERVER:-}
-      - BOT_ADD_REMOVE_LOG=${BOT_ADD_REMOVE_LOG:-}
-      - ERROR_REPORT_WEBHOOK=${ERROR_REPORT_WEBHOOK:-}
-      - AUTO_ERROR_REPORT_WEBHOOK=${AUTO_ERROR_REPORT_WEBHOOK:-}
-      - ENABLE_LOGGER=${ENABLE_LOGGER:-true}
-      - RUN_RPC_SERVER=${RUN_RPC_SERVER:-true}
-      - PORT=${PORT:-8080}
-      - AUTO_DOWNLOAD_LAVALINK_SERVERLIST=${AUTO_DOWNLOAD_LAVALINK_SERVERLIST:-true}
-      - RUN_LOCAL_LAVALINK=${RUN_LOCAL_LAVALINK:-true}
-      - CONNECT_LOCAL_LAVALINK=${CONNECT_LOCAL_LAVALINK:-true}
-      - LAVALINK_FILE_URL=${LAVALINK_FILE_URL:-https://github.com/lavalink-devs/lavalink/releases/download/4.2.2/Lavalink.jar}
-      - ENABLE_COMMANDS_COOLDOWN=${ENABLE_COMMANDS_COOLDOWN:-true}
-      - MESSAGE_CONTENT_INTENT=${MESSAGE_CONTENT_INTENT:-true}
-      - GUILD_MESSAGES_INTENT=${GUILD_MESSAGES_INTENT:-true}
-      - VOICE_STATES_INTENT=${VOICE_STATES_INTENT:-true}
-      - GUILDS_INTENT=${GUILDS_INTENT:-true}
-      - MEMBERS_INTENT=${MEMBERS_INTENT:-true}
-      - PRESENCES_INTENT=${PRESENCES_INTENT:-true}
-    volumes:
-      - anubis_data:/app/local_database
-      - anubis_logs:/app/.logs
-      - anubis_ytdl_cache:/app/.ytdl_cache
-      - anubis_app_commands_sync:/app/.app_commands_sync_data
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-  anubis-dashboard:
-    image: anubis-image-dash
-    container_name: anubis-web-dashboard
-    restart: unless-stopped
-    ports:
-      - "2500:3000"
-    environment:
-      - TOKEN=${TOKEN}
-      - MONGO=${MONGO:-}
-      - BOT_API_URL=http://anubis-bot:8080
-    command: ["python", "-m", "uvicorn", "dashboard.main:app", "--host", "0.0.0.0", "--port", "3000"]
-    volumes:
-      - anubis_data:/app/local_database
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    chromium-sandbox \
+    chromium-common \
+    openjdk-17-jre-headless \
+    wget curl tar gzip \
+    && rm -rf /var/lib/apt/lists/*
 
-volumes:
-  anubis_data:
-  anubis_logs:
-  anubis_ytdl_cache:
-  anubis_app_commands_sync:
+ENV CHROME_PATH=/usr/bin/chromium \
+    CHROMIUM_PATH=/usr/bin/chromium
+
+WORKDIR /app
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+STOPSIGNAL SIGINT
+
+CMD ["python", "main.py"]
+
+FROM base-image AS dashboard
+
+CMD ["python", "-m", "uvicorn", "dashboard.main:app", "--host", "0.0.0.0", "--port", "3000"]

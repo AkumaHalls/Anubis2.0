@@ -42,8 +42,7 @@ emoji>=2.14.0
 async-timeout>=5.0.0
 
 # YouTube Trusted Sessions (required by custom wavelink)
-nodriver>=0.32,<0.40
-undetected-chromedriver>=3.5.0
+nodriver==0.38.0
 
 # Dev / Debug
 disnake-jishaku>=2.6.0

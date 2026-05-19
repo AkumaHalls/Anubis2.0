@@ -261,26 +261,17 @@ class Node:
 
     async def refresh_potoken(self, sandbox=True, browser_executable_path=None):
 
-        browser = Browser()
-
         try:
-            ytid = self._client.bot.config["POTOKEN_YTID"]
-        except:
-            ytid = "jNQXAC9IVRw"
-
-        try:
-            await browser.start(sandbox=sandbox, browser_executable_path=browser_executable_path, ytid=ytid)
+            data = await Browser().generate(headless=sandbox is True, timeout=45)
         except Exception as e:
-            if not browser.data:
-                traceback.print_exc()
-            else:
-                traceback.print_exc()
+            traceback.print_exc()
+            data = {}
 
-        if browser.data:
+        if data and data.get("visitor_data"):
             async with self.session.post(url=f"{self.rest_uri}/youtube",
                 json={
-                  "poToken": browser.data["po_token"],
-                  "visitorData": browser.data["visitor_data"]
+                  "poToken": data.get("po_token", ""),
+                  "visitorData": data["visitor_data"]
                 }, headers=self._websocket.headers
             ) as r:
                 return f"{r.status}: {await r.text()}"

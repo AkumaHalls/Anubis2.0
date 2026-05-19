@@ -2,6 +2,10 @@ version: '3.8'
 
 services:
   anubis-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: base-image
     image: anubis-image
     container_name: anubis-music-bot
     restart: unless-stopped
@@ -34,6 +38,8 @@ services:
       - GUILDS_INTENT=${GUILDS_INTENT:-true}
       - MEMBERS_INTENT=${MEMBERS_INTENT:-true}
       - PRESENCES_INTENT=${PRESENCES_INTENT:-true}
+      - CHROME_PATH=/usr/bin/chromium
+      - CHROMIUM_PATH=/usr/bin/chromium
     volumes:
       - anubis_data:/app/local_database
       - anubis_logs:/app/.logs
@@ -41,6 +47,10 @@ services:
       - anubis_app_commands_sync:/app/.app_commands_sync_data
 
   anubis-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dashboard
     image: anubis-image-dash
     container_name: anubis-web-dashboard
     restart: unless-stopped

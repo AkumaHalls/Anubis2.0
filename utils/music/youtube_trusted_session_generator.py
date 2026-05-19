@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import random
-import string
+import re
 import traceback
 from typing import Optional
 
@@ -11,7 +11,13 @@ import aiohttp
 
 logger = logging.getLogger("youtube_session")
 
-YOUTUBE_EMBED = "https://www.youtube.com/embed/jNQXAC9IVRw"
+YOUTUBE_URLS = [
+    "https://www.youtube.com/embed/jNQXAC9IVRw",
+    "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+    "https://www.youtube.com/",
+]
+
+CHROME_VERSIONS = ["130", "131", "132", "133", "134"]
 
 
 class YouTubeSessionGenerator:
@@ -22,7 +28,6 @@ class YouTubeSessionGenerator:
         self._data: dict = {}
 
     async def _try_extract_from_page(self, page_source: str) -> Optional[dict]:
-        import re
         for match in re.finditer(r'ytcfg\.set\s*\(\s*({.*?})\s*\)\s*;', page_source, re.DOTALL):
             try:
                 cfg = json.loads(match.group(1))
@@ -31,18 +36,28 @@ class YouTubeSessionGenerator:
                     return {"visitor_data": vd, "po_token": cfg.get('PO_TOKEN', '')}
             except Exception:
                 continue
-            
+
         for match in re.finditer(r'visitorData["\']\s*:\s*["\']([^"\']+)["\']', page_source):
             vd = match.group(1)
-            pt_match = re.search(r'poToken["\']\s*:\s*["\']([^"\']+)["\']', page_source)
-            return {"visitor_data": vd, "po_token": pt_match.group(1) if pt_match else ""}
+            return {"visitor_data": vd, "po_token": ""}
+
+        ytcfg_match = re.search(r'ytcfg\.data_\.data_\s*=\s*({.*?})\s*;', page_source, re.DOTALL)
+        if ytcfg_match:
+            try:
+                cfg = json.loads(ytcfg_match.group(1))
+                vd = cfg.get('VISITOR_DATA') or cfg.get('visitorData')
+                if vd:
+                    return {"visitor_data": vd, "po_token": cfg.get('PO_TOKEN', '')}
+            except Exception:
+                pass
+
         return None
 
     async def generate_via_http(self, timeout: int = 15) -> Optional[dict]:
         headers = {
             "User-Agent": self._random_ua(),
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Language": "en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7",
             "Accept-Encoding": "gzip, deflate, br",
             "DNT": "1",
             "Connection": "keep-alive",
@@ -51,133 +66,262 @@ class YouTubeSessionGenerator:
             "Sec-Fetch-Mode": "navigate",
             "Sec-Fetch-Site": "none",
             "Sec-Fetch-User": "?1",
+            "Cache-Control": "max-age=0",
         }
-        try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.get(YOUTUBE_EMBED, timeout=timeout) as resp:
-                    text = await resp.text()
-                    data = await self._try_extract_from_page(text)
-                    if data:
-                        self._data = data
-                        self._success = True
-                        logger.info("Sessao YouTube gerada via HTTP: visitor_data=%s...", (data.get("visitor_data") or "")[:20])
-                        return data
-            return None
-        except Exception as e:
-            logger.debug("Falha generating session via HTTP: %s", e)
-            return None
+        urls_to_try = list(YOUTUBE_URLS)
+        random.shuffle(urls_to_try)
+        last_error = None
+        for url in urls_to_try:
+            try:
+                async with aiohttp.ClientSession(headers=headers) as session:
+                    async with session.get(url, timeout=timeout, allow_redirects=True) as resp:
+                        text = await resp.text()
+                        if len(text) < 500:
+                            continue
+                        data = await self._try_extract_from_page(text)
+                        if data and data.get("visitor_data"):
+                            self._data = data
+                            self.visitor_data = data.get("visitor_data")
+                            self.po_token = data.get("po_token", "")
+                            if self.po_token:
+                                self._success = True
+                                logger.info(
+                                    "Sessao YouTube gerada via HTTP: visitor_data=%s... po_token=%s...",
+                                    (self.visitor_data or "")[:20],
+                                    (self.po_token or "")[:20],
+                                )
+                            else:
+                                logger.info(
+                                    "Sessao YouTube parcial via HTTP (sem po_token): visitor_data=%s...",
+                                    (self.visitor_data or "")[:20],
+                                )
+                            return data
+            except Exception as e:
+                last_error = e
+                logger.debug("Falha HTTP com URL %s: %s", url, e)
+                continue
+        if last_error:
+            logger.debug("Todas as tentativas HTTP falharam: %s", last_error)
+        return None
 
     def _random_ua(self) -> str:
-        chrome_versions = ["130", "131", "132", "133", "134"]
-        cv = random.choice(chrome_versions)
+        cv = random.choice(CHROME_VERSIONS)
         return f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{cv}.0.0.0 Safari/537.36"
+
+    async def _patch_nodriver_prepare_headless(self):
+        import nodriver.core.connection as conn_mod
+        original = getattr(conn_mod.Connection, '_prepare_headless', None)
+        if original is None:
+            return
+        async def patched_prepare_headless(self_conn):
+            try:
+                return await original(self_conn)
+            except TypeError as e:
+                if "cannot unpack non-iterable" in str(e):
+                    logger.debug("Contornado bug nodriver _prepare_headless (NoneType unpack)")
+                    return
+                raise
+        conn_mod.Connection._prepare_headless = patched_prepare_headless
+
+    async def _ensure_browser_executable(self) -> Optional[str]:
+        machine = os.uname().machine if hasattr(os, 'uname') else ""
+        is_arm = machine in ("aarch64", "armv8l", "armv7l")
+        candidates = [
+            os.environ.get("CHROME_PATH"),
+            os.environ.get("CHROMIUM_PATH"),
+            "/bin/chromium",
+            "/bin/chrome",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/usr/bin/chrome",
+            "/usr/lib/chromium-browser/chromium-browser",
+            "/usr/bin/google-chrome-stable",
+            "/snap/bin/chromium",
+        ]
+        if is_arm:
+            candidates.insert(0, "/usr/bin/chromium-browser")
+            candidates.insert(0, "/usr/lib/chromium-browser/chromium-browser")
+        for path in candidates:
+            if path and os.path.isfile(path) and os.access(path, os.X_OK):
+                logger.debug("Browser executavel encontrado: %s", path)
+                return path
+        return None
 
     async def generate_via_browser(self, headless: bool = True, timeout: int = 30) -> dict:
         try:
             import nodriver
-            from nodriver import start, cdp
+            from nodriver import start
         except ImportError:
             logger.info("nodriver nao instalado, pulando geracao via browser")
             return {}
 
-        browser = None
-        try:
-            logger.info("Iniciando Chromium (headless=%s) para gerar sessao YouTube...", headless)
-            
-            browser = await start(
-                headless=headless,
-                sandbox=False,
-                browser_executable_path=None,
-                window_size=(1024, 768),
-            )
-            
-            tab = browser.main_tab
-            
-            captured = {"data": None}
+        for attempt in range(2):
+            browser = None
+            try:
+                await self._patch_nodriver_prepare_headless()
+                browser_path = await self._ensure_browser_executable()
+                logger.info(
+                    "Iniciando Chromium (headless=%s, attempt=%d/2) para gerar sessao YouTube...",
+                    headless, attempt + 1,
+                )
+                browser = await start(
+                    headless=headless,
+                    sandbox=False,
+                    browser_executable_path=browser_path,
+                    window_size=(1024, 768),
+                )
+                tab = browser.main_tab
+                captured = {"data": None}
 
-            async def handler(event):
-                if hasattr(event, 'request') and "/youtubei/v1/player" in getattr(event.request, 'url', ''):
+                async def handler(event):
                     try:
-                        post_data = json.loads(await event.request.post_data)
-                        vd = post_data.get("context", {}).get("client", {}).get("visitorData")
-                        pt = post_data.get("serviceIntegrityDimensions", {}).get("poToken")
+                        params = getattr(event, 'params', None)
+                        if params is None:
+                            return
+                        req = params.get('request', {})
+                        if '/youtubei/v1/player' not in req.get('url', ''):
+                            return
+                        if req.get('method') != 'POST':
+                            return
+                        post_data = req.get('postData')
+                        if not post_data:
+                            return
+                        payload = json.loads(post_data)
+                        vd = payload.get("context", {}).get("client", {}).get("visitorData")
+                        pt = payload.get("serviceIntegrityDimensions", {}).get("poToken")
                         if vd and pt:
                             captured["data"] = {"visitor_data": vd, "po_token": pt}
                     except Exception:
                         pass
-                elif hasattr(event, 'params') and "/youtubei/v1/player" in event.params.get('request', {}).get('url', ''):
+
+                try:
+                    tab.add_handler(nodriver.cdp.network.RequestWillBeSent, handler)
+                except Exception:
+                    pass
+
+                await tab.get(YOUTUBE_URLS[0])
+                await asyncio.sleep(5)
+
+                for click_attempt in range(3):
                     try:
-                        req = event.params['request']
-                        if req.get('method') == 'POST' and req.get('postData'):
-                            post_data = json.loads(req['postData'])
-                            vd = post_data.get("context", {}).get("client", {}).get("visitorData")
-                            pt = post_data.get("serviceIntegrityDimensions", {}).get("poToken")
-                            if vd and pt:
-                                captured["data"] = {"visitor_data": vd, "po_token": pt}
+                        btn = await tab.select("#movie_player, .ytp-large-play-button, video", timeout=3)
+                        await btn.click()
+                        logger.debug("Botao play clicado (tentativa %d)", click_attempt + 1)
+                        break
+                    except Exception:
+                        if click_attempt == 2:
+                            logger.debug("Nao foi possivel clicar no play")
+                        else:
+                            await asyncio.sleep(2)
+
+                remaining = max(2, timeout - 10)
+                await asyncio.sleep(remaining)
+
+                if captured["data"]:
+                    self._data = captured["data"]
+                    self.visitor_data = captured["data"].get("visitor_data")
+                    self.po_token = captured["data"].get("po_token")
+                    self._success = True
+                    logger.info(
+                        "Sessao YouTube gerada via browser: visitor_data=%s... po_token=%s...",
+                        (self.visitor_data or "")[:20],
+                        (self.po_token or "")[:20],
+                    )
+                    return self._data
+
+                try:
+                    html = await tab.evaluate("document.documentElement.outerHTML")
+                    data = await self._try_extract_from_page(html)
+                    if data:
+                        self._data = data
+                        self.visitor_data = data.get("visitor_data")
+                        self.po_token = data.get("po_token", "")
+                        self._success = bool(data.get("visitor_data"))
+                        return data
+                except Exception:
+                    pass
+
+                logger.warning("Nao foi possivel capturar dados da sessao YouTube via browser (attempt %d/2)", attempt + 1)
+                if attempt == 0:
+                    headless = not headless
+                    logger.debug("Tentando novamente com headless=%s", headless)
+                continue
+
+            except Exception as e:
+                err_msg = str(e)
+                logger.warning(
+                    "Falha ao gerar sessao YouTube via browser (attempt %d/2): %s",
+                    attempt + 1, err_msg[:200],
+                )
+                if attempt == 0:
+                    headless = not headless
+                    logger.debug("Tentando novamente com headless=%s", headless)
+                continue
+            finally:
+                if browser:
+                    try:
+                        browser.stop()
                     except Exception:
                         pass
 
-            try:
-                tab.add_handler(cdp.network.RequestWillBeSent, handler)
-            except AttributeError:
-                try:
-                    tab.add_handler(cdp.network.RequestWillBeSentExtraInfo, handler)
-                except Exception:
-                    pass
+        return {}
 
-            await tab.get(YOUTUBE_EMBED)
-            await asyncio.sleep(5)
-
-            for attempt in range(3):
-                try:
-                    btn = await tab.select("#movie_player, .ytp-large-play-button, video", timeout=3)
-                    await btn.click()
-                    logger.debug("Botao play clicado (tentativa %d)", attempt + 1)
-                    break
-                except Exception:
-                    if attempt == 2:
-                        logger.debug("Nao foi possivel clicar no play")
-                        await tab.get(YOUTUBE_EMBED)
-                    await asyncio.sleep(2)
-
-            remaining = max(2, timeout - 8)
-            await asyncio.sleep(remaining)
-
-            if captured["data"]:
-                self._data = captured["data"]
-                self.visitor_data = captured["data"].get("visitor_data")
-                self.po_token = captured["data"].get("po_token")
-                self._success = True
-                logger.info("Sessao YouTube gerada via browser: visitor_data=%s... po_token=%s...",
-                           (self.visitor_data or "")[:20], (self.po_token or "")[:20])
-                return self._data
-
-            try:
-                html = await tab.evaluate("document.documentElement.outerHTML")
-                data = await self._try_extract_from_page(html)
-                if data:
-                    self._data = data
-                    self._success = True
-                    return data
-            except Exception:
-                pass
-
-            logger.warning("Nao foi possivel capturar dados da sessao YouTube via browser")
+    async def generate_via_ytdlp(self, timeout: int = 15) -> dict:
+        try:
+            import yt_dlp
+        except ImportError:
+            logger.debug("yt-dlp nao disponivel para extracao de sessao")
             return {}
 
+        try:
+            ydl_opts = {
+                "quiet": True,
+                "no_warnings": True,
+                "extract_flat": True,
+                "skip_download": True,
+                "timeout": timeout,
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["android", "web"],
+                        "max_comments": ["0"],
+                    }
+                },
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(
+                    "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+                    download=False,
+                )
+                if info and isinstance(info, dict):
+                    extractor = ydl.get_info_extractor("Youtube")
+                    if hasattr(extractor, '_extract_session_data'):
+                        session_data = extractor._extract_session_data()
+                        if session_data:
+                            vd = session_data.get("visitor_data") or session_data.get("visitorData")
+                            pt = session_data.get("po_token") or session_data.get("poToken")
+                            if vd:
+                                data = {"visitor_data": vd, "po_token": pt or ""}
+                                self._data = data
+                                self.visitor_data = vd
+                                self.po_token = pt or ""
+                                self._success = True
+                                logger.info(
+                                    "Sessao YouTube gerada via yt-dlp: visitor_data=%s... po_token=%s...",
+                                    vd[:20], (pt or "")[:20],
+                                )
+                                return data
+            return {}
         except Exception as e:
-            logger.warning("Falha ao gerar sessao YouTube via browser: %s", traceback.format_exc())
+            logger.debug("Falha ao extrair sessao via yt-dlp: %s", e)
             return {}
-        finally:
-            if browser:
-                try:
-                    browser.stop()
-                except Exception:
-                    pass
 
     async def generate(self, headless: bool = True, timeout: int = 30) -> dict:
         data = await self.generate_via_http(timeout=timeout)
-        if data:
+        if data and data.get("visitor_data"):
+            return data
+
+        data = await self.generate_via_ytdlp(timeout=timeout)
+        if data and data.get("visitor_data"):
             return data
 
         data = await self.generate_via_browser(headless=headless, timeout=timeout)

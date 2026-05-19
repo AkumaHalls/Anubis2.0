@@ -75,8 +75,17 @@ def run_lavalink(
         lavalink_cpu_cores: int = 1,
         use_jabba: bool = False
 ):
-    arch, osname = platform.architecture()
-    jdk_platform = f"{platform.system()}-{arch}-{osname}"
+    arch = platform.machine().lower()
+    if arch in ("x86_64", "amd64"):
+        jdk_arch = "amd64"
+    elif arch in ("aarch64", "arm64"):
+        jdk_arch = "aarch64"
+    elif arch in ("i386", "i686", "x86"):
+        jdk_arch = "i586"
+    else:
+        jdk_arch = "amd64"
+    osname = platform.system()
+    jdk_platform = f"{osname}-{arch}"
 
     if not (java_cmd := validate_java("java")):
 
@@ -128,10 +137,7 @@ def run_lavalink(
                 except:
                     pass
 
-                if platform.architecture()[0] != "64bit":
-                    jdk_url = "https://download.bell-sw.com/java/21.0.3+12/bellsoft-jdk21.0.3+12-windows-i586-lite.zip"
-                else:
-                    jdk_url = "https://download.bell-sw.com/java/21.0.3+12/bellsoft-jdk21.0.3+12-windows-amd64-lite.zip"
+                jdk_url = f"https://download.bell-sw.com/java/21.0.3+12/bellsoft-jdk21.0.3+12-windows-{jdk_arch}-lite.zip"
 
                 jdk_filename = "java.zip"
 
@@ -173,10 +179,7 @@ def run_lavalink(
                     except:
                         pass
 
-                    if platform.architecture()[0] != "64bit":
-                        jdk_url = "https://download.bell-sw.com/java/21.0.3+12/bellsoft-jdk21.0.3+12-linux-i586-lite.tar.gz"
-                    else:
-                        jdk_url = "https://download.bell-sw.com/java/21.0.3+12/bellsoft-jdk21.0.3+12-linux-amd64-lite.tar.gz"
+                    jdk_url = f"https://download.bell-sw.com/java/21.0.3+12/bellsoft-jdk21.0.3+12-linux-{jdk_arch}-lite.tar.gz"
 
                     java_cmd = os.path.realpath(f"./.java/{jdk_platform}/bin/java")
 

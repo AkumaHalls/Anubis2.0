@@ -1,0 +1,14 @@
+.git/
+.gitignore
+.env
+.env.example
+*.md
+*.bat
+*.sh
+youtube_cookies*.txt
+__pycache__/
+*.pyc
+.tox/
+.pytest_cache/
+.ytdl_cache/
+.logs/
