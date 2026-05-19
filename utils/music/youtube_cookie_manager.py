@@ -1,24 +1,28 @@
 import asyncio
+import logging
 import os
 import time
 from typing import Optional
 
+logger = logging.getLogger("youtube_cookies")
+
 YT_COOKIE_FILE = os.path.join(os.getcwd(), "youtube_cookies.txt")
 
 
-def _ensure_cookie_file():
-    if os.path.isfile(YT_COOKIE_FILE):
-        return
+def _ensure_cookie_file(visitor_data: str = "", po_token: str = ""):
     lines = [
         "# Netscape HTTP Cookie File",
         "# https://curl.haxx.se/docs/http-cookies.html",
-        "# Gerado pelo Anubis Cookie Manager - fallback para yt-dlp",
+        "# Gerado pelo Anubis Cookie Manager",
         ".youtube.com\tTRUE\t/\tTRUE\t0\tCONSENT\tYES+shp.gws-20250421-0-RC2.en+FX+126",
         ".youtube.com\tTRUE\t/\tFALSE\t0\tSOCS\tCAISNQgEEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyX3Jlc3RfcG1lZDBfMjAyNTA0MjE",
         ".google.com\tTRUE\t/\tTRUE\t0\tCONSENT\tYES+shp.gws-20250421-0-RC2.en+FX+126",
     ]
+    if visitor_data:
+        lines.append(f".youtube.com\tTRUE\t/\tFALSE\t0\tVISITOR_INFO1_LIVE\t{visitor_data}")
     with open(YT_COOKIE_FILE, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
+    logger.debug("Cookie file atualizado em %s", YT_COOKIE_FILE)
 
 
 class YouTubeCookieManager:
@@ -28,6 +32,7 @@ class YouTubeCookieManager:
         self.last_refresh: float = 0
         self.refresh_interval: int = 3600
         self._task: Optional[asyncio.Task] = None
+        self._yt_proxy: Optional[str] = None
         _ensure_cookie_file()
 
     @property
@@ -47,8 +52,73 @@ class YouTubeCookieManager:
 
     def get_ytdl_cookiefile(self) -> str:
         if not os.path.isfile(YT_COOKIE_FILE):
-            _ensure_cookie_file()
+            _ensure_cookie_file(self.visitor_data or "", self.po_token or "")
         return YT_COOKIE_FILE
+
+    def get_ytdl_proxy(self) -> Optional[str]:
+        return self._yt_proxy
+
+    def set_proxy(self, proxy_url: Optional[str]):
+        self._yt_proxy = proxy_url
+        if proxy_url:
+            logger.info("Proxy YouTube configurado: %s", proxy_url)
+
+    async def generate_via_browser(self, headless: bool = True, timeout: int = 30) -> bool:
+        try:
+            from .youtube_trusted_session_generator import YouTubeSessionGenerator
+            gen = YouTubeSessionGenerator()
+            data = await gen.generate(headless=headless, timeout=timeout)
+            if gen.success and data:
+                self.visitor_data = data.get("visitor_data") or self.visitor_data
+                self.po_token = data.get("po_token") or self.po_token
+                self.last_refresh = time.time()
+                _ensure_cookie_file(self.visitor_data or "", self.po_token or "")
+                return True
+            return False
+        except ImportError:
+            logger.info("youtube_trusted_session_generator nao disponivel")
+            return False
+        except Exception as e:
+            logger.warning("Falha ao gerar sessao via browser: %s", e)
+            return False
+
+    async def refresh_token_any(self, pool) -> bool:
+        if self.has_token:
+            return True
+
+        try:
+            from .youtube_trusted_session_generator import YouTubeSessionGenerator
+            gen = YouTubeSessionGenerator()
+
+            data = await gen.generate_via_http(timeout=15)
+            if data:
+                self.visitor_data = data.get("visitor_data") or self.visitor_data
+                self.po_token = data.get("po_token") or self.po_token
+                self.last_refresh = time.time()
+                _ensure_cookie_file(self.visitor_data or "", self.po_token or "")
+                logger.info("Token YouTube renovado via HTTP direto")
+                await self.inject_into_all_nodes(pool)
+                return True
+        except Exception:
+            pass
+
+        for bot in pool.get_all_bots():
+            for node in bot.music.nodes.values():
+                if not node.is_available:
+                    continue
+                ok = await self.refresh_from_lavalink(node.rest_uri, node.password, node.session)
+                if ok:
+                    await self.inject_into_node(node)
+                    return True
+                await asyncio.sleep(1)
+
+        return False
+
+    async def inject_into_all_nodes(self, pool):
+        for bot in pool.get_all_bots():
+            for node in bot.music.nodes.values():
+                if node.is_available:
+                    await self.inject_into_node(node)
 
     async def refresh_from_lavalink(self, rest_uri: str, password: str, session) -> bool:
         try:
@@ -57,8 +127,8 @@ class YouTubeCookieManager:
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    self.po_token = data.get("poToken") or data.get("po_token")
-                    self.visitor_data = data.get("visitorData") or data.get("visitor_data")
+                    self.po_token = data.get("poToken") or data.get("po_token") or self.po_token
+                    self.visitor_data = data.get("visitorData") or data.get("visitor_data") or self.visitor_data
                     self.last_refresh = time.time()
                     if self.has_token:
                         return True
@@ -92,6 +162,7 @@ class YouTubeCookieManager:
                 timeout=15,
             ) as r:
                 if r.status == 200:
+                    logger.info("PO Token injetado no node %s", node.rest_uri)
                     return True
         except Exception:
             pass
@@ -105,6 +176,16 @@ class YouTubeCookieManager:
                 await self.refresh_on_all_nodes(pool)
             except Exception:
                 pass
+
+    def try_generate_sync(self):
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            data = loop.run_until_complete(self.generate_via_browser())
+            loop.close()
+            return data
+        except Exception:
+            return False
 
 
 youtube_cookie_manager = YouTubeCookieManager()

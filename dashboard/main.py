@@ -24,7 +24,24 @@ async def lifespan(app: FastAPI):
     print(f"Web Dashboard - API do bot (backend): {BOT_API_URL}")
     async with aiohttp.ClientSession() as session:
         app.state.http_session = session
+        await _wait_for_backend(session)
         yield
+
+
+async def _wait_for_backend(session: aiohttp.ClientSession):
+    url = f"{BOT_API_URL}/api/stats"
+    for attempt in range(30):
+        try:
+            async with session.get(url, timeout=5) as resp:
+                if resp.status == 200:
+                    print(f"Bot API online apos {attempt} tentativa(s)")
+                    return
+        except Exception:
+            pass
+        if attempt == 0:
+            print(f"Aguardando bot API em {BOT_API_URL}...")
+        await asyncio.sleep(2)
+    print(f"AVISO: Bot API nao respondeu em {BOT_API_URL} apos 60s. Painel pode mostrar Offline.")
 
 app = FastAPI(title="Anubis Dashboard", description="Painel de Controle do Anubis Music Bot", version="2.0.0", lifespan=lifespan)
 
@@ -397,7 +414,7 @@ document.addEventListener('DOMContentLoaded', loadConfig);
 # Tornado API running on BOT_API_URL (http://localhost:8080).
 # This avoids CORS issues and hardcoded public IPs.
 
-OFFLINE = {"error": "API Offline"}
+OFFLINE = {"error": "API Offline", "detail": f"backend={BOT_API_URL}"}
 
 async def _proxy(method: str, endpoint: str, **kwargs) -> JSONResponse:
     url = f"{BOT_API_URL}/{endpoint.lstrip('/')}"
@@ -409,13 +426,17 @@ async def _proxy(method: str, endpoint: str, **kwargs) -> JSONResponse:
                 text = await resp.text()
                 return JSONResponse({"error": text}, status_code=resp.status)
             return JSONResponse(data)
-    except ClientConnectorError:
-        return JSONResponse(OFFLINE, status_code=503)
-    except ClientError:
+    except ClientConnectorError as e:
+        print(f"[PROXY] ClientConnectorError para {url}: {e}")
         return JSONResponse(OFFLINE, status_code=503)
     except asyncio.TimeoutError:
-        return JSONResponse(OFFLINE, status_code=504)
+        print(f"[PROXY] TimeoutError para {url}")
+        return JSONResponse({**OFFLINE, "error": "API Offline (timeout)"}, status_code=504)
+    except ClientError as e:
+        print(f"[PROXY] ClientError para {url}: {type(e).__name__}: {e}")
+        return JSONResponse(OFFLINE, status_code=503)
     except Exception:
+        print(f"[PROXY] Erro inesperado para {url}:")
         _tb.print_exc()
         return JSONResponse(OFFLINE, status_code=500)
 
@@ -453,6 +474,10 @@ async def proxy_api_player_control(guild_id: str, request: Request):
 @app.post("/api/server/{guild_id}/leave")
 async def proxy_api_server_leave(guild_id: str):
     return await _proxy("POST", f"/api/server/{guild_id}/leave")
+
+@app.get("/api/ping")
+async def proxy_api_ping():
+    return JSONResponse({"status": "ok", "backend": BOT_API_URL, "timeout": PROXY_TIMEOUT})
 
 @app.get("/api/{path:path}")
 async def proxy_api_catch_all(path: str, request: Request):

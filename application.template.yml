@@ -19,6 +19,18 @@ lavalink:
       bandcamp: true
       http: true
       local: false
+    plugins:
+      - dependency: "dev.lavalink.youtube:youtube-plugin:1.11.3"
+        repository: "https://maven.lavalink.dev/releases"
+        snapshot: false
+
+plugins:
+  youtube:
+    enabled: true
+    oauth:
+      enabled: false
+      allowSearch: true
+      token: ""
 
 metrics:
   prometheus:
@@ -32,3 +44,4 @@ logging:
     root: INFO
     lavalink: INFO
     com.sedmelluq: INFO
+    dev.lavalink.youtube: DEBUG

@@ -1,0 +1,6 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/docs/http-cookies.html
+# Gerado pelo Anubis Cookie Manager
+.youtube.com	TRUE	/	TRUE	0	CONSENT	YES+shp.gws-20250421-0-RC2.en+FX+126
+.youtube.com	TRUE	/	FALSE	0	SOCS	CAISNQgEEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyX3Jlc3RfcG1lZDBfMjAyNTA0MjE
+.google.com	TRUE	/	TRUE	0	CONSENT	YES+shp.gws-20250421-0-RC2.en+FX+126

@@ -6945,6 +6945,9 @@ class Music(commands.Cog):
                                     'cookiefile': _cfile,
                                     'extractor_args': _xtra,
                                 }
+                                _proxy_url = _ycm.get_ytdl_proxy()
+                                if _proxy_url:
+                                    _opts['proxy'] = _proxy_url
                                 raw = await self.bot.loop.run_in_executor(
                                     None, lambda: _ydl.YoutubeDL(_opts).extract_info(query, download=False)
                                 )

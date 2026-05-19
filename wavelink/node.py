@@ -31,7 +31,7 @@ import traceback
 from typing import Any, Callable, Dict, Optional, Union, List
 from urllib.parse import quote
 
-from utils.music.youtube_trusted_session_generator import Browser
+from utils.music.youtube_trusted_session_generator import YouTubeSessionGenerator as Browser
 from utils.music.youtube_cookie_manager import youtube_cookie_manager
 from .backoff import ExponentialBackoff
 from .errors import *

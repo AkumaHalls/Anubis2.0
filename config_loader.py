@@ -147,6 +147,7 @@ DEFAULT_CONFIG = {
     ##############
     "USE_YTDL": True,
     "YT_COOKIE_REFRESH_INTERVAL": 3600,
+    "YT_PROXY": "",
     "FORCE_USE_DEEZER_CLIENT": False,
     "SILENT_PUBLICBOT_WARNING": False,
     "DBCACHE_SIZE": 1000,

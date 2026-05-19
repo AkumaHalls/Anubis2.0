@@ -895,6 +895,26 @@ class BotPool:
             self.node_check(LAVALINK_SERVERS, loop=loop, start_local=start_local)
 
         from utils.music.youtube_cookie_manager import youtube_cookie_manager
+
+        yt_proxy = self.config.get("YT_PROXY", "") or None
+        if yt_proxy:
+            youtube_cookie_manager.set_proxy(yt_proxy)
+
+        async def _init_youtube_session():
+            await asyncio.sleep(15)
+            if not youtube_cookie_manager.has_token:
+                logger.info("Tentando obter token YouTube...")
+                ok = await youtube_cookie_manager.refresh_token_any(self)
+                if ok:
+                    logger.info("Token YouTube obtido com sucesso")
+                else:
+                    logger.info("Tentando gerar sessao YouTube via Chromium...")
+                    ok = await youtube_cookie_manager.generate_via_browser(headless=True, timeout=30)
+                    if ok:
+                        logger.info("Sessao YouTube gerada com sucesso via Chromium")
+                        await youtube_cookie_manager.inject_into_all_nodes(self)
+
+        loop.create_task(_init_youtube_session())
         loop.create_task(youtube_cookie_manager.start_periodic_refresh(self, interval=self.config.get("YT_COOKIE_REFRESH_INTERVAL", 3600)))
 
         if self.config["RUN_RPC_SERVER"]:

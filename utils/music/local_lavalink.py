@@ -198,21 +198,17 @@ def run_lavalink(
                 else:
                     java_cmd = os.path.realpath(f"./.java/{jdk_platform}/bin/java")
 
-    clear_plugins = False
-
     for filename, url in (
         ("Lavalink.jar", lavalink_file_url),
         ("application.yml", "https://github.com/zRitsu/LL-binaries/releases/download/0.0.1/application.yml"),
     ):
-        if download_file(url, filename):
-            clear_plugins = True
+        download_file(url, filename)
 
     if not os.path.isfile("application.yml"):
         if os.path.isfile("application.template.yml"):
             import shutil as _su
             _su.copy2("application.template.yml", "application.yml")
-            print("📄 - application.yml copiado do template local (fallback)")
-            clear_plugins = True
+            print("application.yml copiado do template local (fallback)")
 
     if lavalink_cpu_cores >= 1:
         java_cmd += f" -XX:ActiveProcessorCount={lavalink_cpu_cores}"
@@ -224,19 +220,13 @@ def run_lavalink(
         java_cmd += f" -Xms{lavalink_ram_limit}m"
 
     if os.name != "nt":
-
         if os.path.isdir("./.tempjar"):
             shutil.rmtree("./.tempjar")
-
         os.makedirs("./.tempjar/undertow-docbase.80.2258596138812103750")
-
         java_cmd += f" -Djava.io.tmpdir={os.getcwd()}/.tempjar"
 
-    if clear_plugins:
-        try:
-            shutil.rmtree("./plugins")
-        except:
-            pass
+    if not os.path.isdir("./plugins"):
+        os.makedirs("./plugins", exist_ok=True)
 
     java_cmd += " -jar Lavalink.jar"
 
