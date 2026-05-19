@@ -126,6 +126,7 @@ class YouTubeSessionGenerator:
     async def _ensure_browser_executable(self) -> Optional[str]:
         machine = os.uname().machine if hasattr(os, 'uname') else ""
         is_arm = machine in ("aarch64", "armv8l", "armv7l")
+        is_windows = os.name == "nt"
         candidates = [
             os.environ.get("CHROME_PATH"),
             os.environ.get("CHROMIUM_PATH"),
@@ -138,6 +139,21 @@ class YouTubeSessionGenerator:
             "/usr/bin/google-chrome-stable",
             "/snap/bin/chromium",
         ]
+        if is_windows:
+            candidates = [
+                os.environ.get("CHROME_PATH"),
+                os.environ.get("CHROMIUM_PATH"),
+                os.path.expandvars(R"%PROGRAMFILES%\Google\Chrome\Application\chrome.exe"),
+                os.path.expandvars(R"%PROGRAMFILES(X86)%\Google\Chrome\Application\chrome.exe"),
+                os.path.expandvars(R"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+                os.path.expandvars(R"%USERPROFILE%\AppData\Local\Google\Chrome\Application\chrome.exe"),
+                os.path.expandvars(R"%PROGRAMFILES%\Chromium\Application\chrome.exe"),
+                os.path.expandvars(R"%LOCALAPPDATA%\Chromium\Application\chrome.exe"),
+                os.path.expandvars(R"%USERPROFILE%\AppData\Local\Chromium\Application\chrome.exe"),
+                R"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                R"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                R"C:\Users\Administrator\AppData\Local\Google\Chrome\Application\chrome.exe",
+            ]
         if is_arm:
             candidates.insert(0, "/usr/bin/chromium-browser")
             candidates.insert(0, "/usr/lib/chromium-browser/chromium-browser")
@@ -287,6 +303,19 @@ class YouTubeSessionGenerator:
                     }
                 },
             }
+
+            _user_cookie = os.path.join(os.getcwd(), "youtube_cookies_user.txt")
+            if os.path.isfile(_user_cookie):
+                ydl_opts["cookiefile"] = _user_cookie
+
+            try:
+                from utils.music.youtube_cookie_manager import youtube_cookie_manager
+                if youtube_cookie_manager.po_token:
+                    ydl_opts["extractor_args"]["youtube"].setdefault("po_token", [youtube_cookie_manager.po_token])
+                if youtube_cookie_manager.visitor_data:
+                    ydl_opts["extractor_args"]["youtube"].setdefault("visitor_data", [youtube_cookie_manager.visitor_data])
+            except Exception:
+                pass
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(
                     "https://www.youtube.com/watch?v=jNQXAC9IVRw",

@@ -9,9 +9,12 @@ from utils.music.errors import GenericError
 from utils.music.models import PartialTrack
 
 YT_COOKIE_FILE = os.path.join(os.getcwd(), "youtube_cookies.txt")
+YT_USER_COOKIE_FILE = os.path.join(os.getcwd(), "youtube_cookies_user.txt")
 
 
 def _build_ydl_opts(cookie_file: str = "", po_token: str = "", visitor_data: str = "", proxy: str = "") -> dict:
+    if not cookie_file:
+        cookie_file = YT_USER_COOKIE_FILE
     opts = {
         'format': 'bestaudio/best',
         'noplaylist': True,
