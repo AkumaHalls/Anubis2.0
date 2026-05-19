@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   anubis-bot:
-    build: .
+    image: anubis-image
     container_name: anubis-music-bot
     restart: unless-stopped
     ports:
@@ -23,13 +23,11 @@ services:
       - ENABLE_LOGGER=${ENABLE_LOGGER:-true}
       - RUN_RPC_SERVER=${RUN_RPC_SERVER:-true}
       - PORT=${PORT:-8080}
-      - AUTO_DOWNLOAD_LAVALINK_SERVERLIST=${AUTO_DOWNLOAD_LAVALINK_SERVERLIST:-false}
+      - AUTO_DOWNLOAD_LAVALINK_SERVERLIST=${AUTO_DOWNLOAD_LAVALINK_SERVERLIST:-true}
       - RUN_LOCAL_LAVALINK=${RUN_LOCAL_LAVALINK:-true}
       - CONNECT_LOCAL_LAVALINK=${CONNECT_LOCAL_LAVALINK:-true}
       - LAVALINK_FILE_URL=${LAVALINK_FILE_URL:-https://github.com/lavalink-devs/lavalink/releases/download/4.2.2/Lavalink.jar}
       - ENABLE_COMMANDS_COOLDOWN=${ENABLE_COMMANDS_COOLDOWN:-true}
-      - USE_YTDL=${USE_YTDL:-true}
-      - YT_PROXY=${YT_PROXY:-}
       - MESSAGE_CONTENT_INTENT=${MESSAGE_CONTENT_INTENT:-true}
       - GUILD_MESSAGES_INTENT=${GUILD_MESSAGES_INTENT:-true}
       - VOICE_STATES_INTENT=${VOICE_STATES_INTENT:-true}
@@ -41,31 +39,23 @@ services:
       - anubis_logs:/app/.logs
       - anubis_ytdl_cache:/app/.ytdl_cache
       - anubis_app_commands_sync:/app/.app_commands_sync_data
-      - anubis_cookies:/app/youtube_cookies.txt
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/stats", "--max-time", "5"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
 
   anubis-dashboard:
-    build: .
     image: anubis-image-dash
-    container_name: anubis-dashboard
+    container_name: anubis-web-dashboard
     restart: unless-stopped
     ports:
       - "2500:3000"
-    command: ["python", "-m", "uvicorn", "dashboard.main:app", "--host", "0.0.0.0", "--port", "3000", "--log-level", "info"]
     environment:
+      - TOKEN=${TOKEN}
+      - MONGO=${MONGO:-}
       - BOT_API_URL=http://anubis-bot:8080
-    depends_on:
-      anubis-bot:
-        condition: service_started
+    command: ["python", "-m", "uvicorn", "dashboard.main:app", "--host", "0.0.0.0", "--port", "3000"]
+    volumes:
+      - anubis_data:/app/local_database
 
 volumes:
   anubis_data:
   anubis_logs:
   anubis_ytdl_cache:
   anubis_app_commands_sync:
-  anubis_cookies:
