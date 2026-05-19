@@ -308,6 +308,15 @@ class YouTubeSessionGenerator:
             }
 
             _user_cookie = os.path.join(os.getcwd(), "youtube_cookies_user.txt")
+            if not os.path.isfile(_user_cookie):
+                _env_cookies = os.environ.get("YT_USER_COOKIES", "").strip()
+                if _env_cookies:
+                    try:
+                        with open(_user_cookie, "w", encoding="utf-8") as _f:
+                            _f.write(_env_cookies)
+                        logger.info("Cookies restaurados de YT_USER_COOKIES em generate_via_ytdlp")
+                    except Exception:
+                        pass
             if os.path.isfile(_user_cookie):
                 ydl_opts["cookiefile"] = _user_cookie
 
