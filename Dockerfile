@@ -1,34 +1,61 @@
-FROM python:3.11-slim-bookworm
+version: '3.8'
 
-WORKDIR /app
+services:
+  anubis-bot:
+    image: anubis-image
+    container_name: anubis-music-bot
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - TOKEN=${TOKEN}
+      - DEFAULT_PREFIX=${DEFAULT_PREFIX:-!!}
+      - MONGO=${MONGO:-}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+      - LASTFM_KEY=${LASTFM_KEY:-}
+      - LASTFM_SECRET=${LASTFM_SECRET:-}
+      - OWNER_IDS=${OWNER_IDS:-}
+      - SUPPORT_SERVER=${SUPPORT_SERVER:-}
+      - BOT_ADD_REMOVE_LOG=${BOT_ADD_REMOVE_LOG:-}
+      - ERROR_REPORT_WEBHOOK=${ERROR_REPORT_WEBHOOK:-}
+      - AUTO_ERROR_REPORT_WEBHOOK=${AUTO_ERROR_REPORT_WEBHOOK:-}
+      - ENABLE_LOGGER=${ENABLE_LOGGER:-true}
+      - RUN_RPC_SERVER=${RUN_RPC_SERVER:-true}
+      - PORT=${PORT:-8080}
+      - AUTO_DOWNLOAD_LAVALINK_SERVERLIST=${AUTO_DOWNLOAD_LAVALINK_SERVERLIST:-true}
+      - RUN_LOCAL_LAVALINK=${RUN_LOCAL_LAVALINK:-true}
+      - CONNECT_LOCAL_LAVALINK=${CONNECT_LOCAL_LAVALINK:-true}
+      - LAVALINK_FILE_URL=${LAVALINK_FILE_URL:-https://github.com/lavalink-devs/lavalink/releases/download/4.2.2/Lavalink.jar}
+      - ENABLE_COMMANDS_COOLDOWN=${ENABLE_COMMANDS_COOLDOWN:-true}
+      - MESSAGE_CONTENT_INTENT=${MESSAGE_CONTENT_INTENT:-true}
+      - GUILD_MESSAGES_INTENT=${GUILD_MESSAGES_INTENT:-true}
+      - VOICE_STATES_INTENT=${VOICE_STATES_INTENT:-true}
+      - GUILDS_INTENT=${GUILDS_INTENT:-true}
+      - MEMBERS_INTENT=${MEMBERS_INTENT:-true}
+      - PRESENCES_INTENT=${PRESENCES_INTENT:-true}
+    volumes:
+      - anubis_data:/app/local_database
+      - anubis_logs:/app/.logs
+      - anubis_ytdl_cache:/app/.ytdl_cache
+      - anubis_app_commands_sync:/app/.app_commands_sync_data
 
-# Instalação das dependências (adicionamos python3-brotli e libx11)
-RUN apt-get update && apt-get install -y \
-    openjdk-17-jdk-headless \
-    git \
-    ffmpeg \
-    curl \
-    chromium \
-    chromium-sandbox \
-    python3-brotli \
-    libnss3 \
-    libatk-bridge2.0-0 \
-    libgtk-3-0 \
-    --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
+  anubis-dashboard:
+    image: anubis-image-dash
+    container_name: anubis-web-dashboard
+    restart: unless-stopped
+    ports:
+      - "2500:3000"
+    environment:
+      - TOKEN=${TOKEN}
+      - MONGO=${MONGO:-}
+      - BOT_API_URL=http://anubis-bot:8080
+    command: ["python", "-m", "uvicorn", "dashboard.main:app", "--host", "0.0.0.0", "--port", "3000"]
+    volumes:
+      - anubis_data:/app/local_database
 
-# Variaveis de ambiente para o Chromium não quebrar
-ENV CHROME_BIN=/usr/bin/chromium
-ENV CHROMIUM_FLAGS="--no-sandbox --disable-gpu --disable-dev-shm-usage --headless=new"
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir brotli  # Garante que o python também tenha o brotli
-
-COPY . .
-RUN mkdir -p .logs local_database .app_commands_sync_data plugins
-
-EXPOSE 8080
-
-CMD ["python", "main.py"]
+volumes:
+  anubis_data:
+  anubis_logs:
+  anubis_ytdl_cache:
+  anubis_app_commands_sync:
