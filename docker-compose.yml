@@ -41,6 +41,7 @@ services:
       - anubis_logs:/app/.logs
       - anubis_ytdl_cache:/app/.ytdl_cache
       - anubis_app_commands_sync:/app/.app_commands_sync_data
+      - anubis_cookies:/app/youtube_cookies.txt
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/stats", "--max-time", "5"]
       interval: 30s
@@ -67,3 +68,4 @@ volumes:
   anubis_logs:
   anubis_ytdl_cache:
   anubis_app_commands_sync:
+  anubis_cookies:

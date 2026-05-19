@@ -7,22 +7,30 @@ from typing import Optional
 logger = logging.getLogger("youtube_cookies")
 
 YT_COOKIE_FILE = os.path.join(os.getcwd(), "youtube_cookies.txt")
+YT_USER_COOKIE_FILE = os.path.join(os.getcwd(), "youtube_cookies_user.txt")
 
 
 def _ensure_cookie_file(visitor_data: str = "", po_token: str = ""):
+    if os.path.isfile(YT_USER_COOKIE_FILE):
+        logger.info("Usando cookies fornecidos pelo usuario: %s", YT_USER_COOKIE_FILE)
+        return
+    now_ts = int(time.time())
+    expiry = now_ts + 86400 * 365
     lines = [
         "# Netscape HTTP Cookie File",
-        "# https://curl.haxx.se/docs/http-cookies.html",
         "# Gerado pelo Anubis Cookie Manager",
-        ".youtube.com\tTRUE\t/\tTRUE\t0\tCONSENT\tYES+shp.gws-20250421-0-RC2.en+FX+126",
-        ".youtube.com\tTRUE\t/\tFALSE\t0\tSOCS\tCAISNQgEEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyX3Jlc3RfcG1lZDBfMjAyNTA0MjE",
-        ".google.com\tTRUE\t/\tTRUE\t0\tCONSENT\tYES+shp.gws-20250421-0-RC2.en+FX+126",
+        ".youtube.com\tTRUE\t/\tTRUE\t{expiry}\tCONSENT\tYES+shp.gws-20250421-0-RC2.en+FX+126".format(expiry=expiry),
+        ".youtube.com\tTRUE\t/\tFALSE\t{expiry}\tSOCS\tCAISNQgEEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyX3Jlc3RfcG1lZDBfMjAyNTA0MjE".format(expiry=expiry),
+        ".youtube.com\tTRUE\t/\tFALSE\t{expiry}\t__Secure-3PSIDCC\t".format(expiry=expiry),
+        ".youtube.com\tTRUE\t/\tFALSE\t{expiry}\t__Secure-3PAPISID\t".format(expiry=expiry),
+        ".youtube.com\tTRUE\t/\tFALSE\t{expiry}\t__Secure-3PSID\t".format(expiry=expiry),
+        ".google.com\tTRUE\t/\tTRUE\t{expiry}\tCONSENT\tYES+shp.gws-20250421-0-RC2.en+FX+126".format(expiry=expiry),
     ]
     if visitor_data:
-        lines.append(f".youtube.com\tTRUE\t/\tFALSE\t0\tVISITOR_INFO1_LIVE\t{visitor_data}")
+        lines.append(f".youtube.com\tTRUE\t/\tFALSE\t{expiry}\tVISITOR_INFO1_LIVE\t{visitor_data}")
     with open(YT_COOKIE_FILE, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
-    logger.debug("Cookie file atualizado em %s", YT_COOKIE_FILE)
+    logger.debug("Arquivo de cookies atualizado: %s", YT_COOKIE_FILE)
 
 
 class YouTubeCookieManager:
@@ -51,6 +59,8 @@ class YouTubeCookieManager:
         return {'youtube': args}
 
     def get_ytdl_cookiefile(self) -> str:
+        if os.path.isfile(YT_USER_COOKIE_FILE):
+            return YT_USER_COOKIE_FILE
         if not os.path.isfile(YT_COOKIE_FILE):
             _ensure_cookie_file(self.visitor_data or "", self.po_token or "")
         return YT_COOKIE_FILE
@@ -62,6 +72,15 @@ class YouTubeCookieManager:
         self._yt_proxy = proxy_url
         if proxy_url:
             logger.info("Proxy YouTube configurado: %s", proxy_url)
+
+    def load_user_cookies(self, filepath: str) -> bool:
+        if not os.path.isfile(filepath):
+            logger.warning("Arquivo de cookies do usuario nao encontrado: %s", filepath)
+            return False
+        import shutil
+        shutil.copy2(filepath, YT_USER_COOKIE_FILE)
+        logger.info("Cookies do usuario carregados de: %s", filepath)
+        return True
 
     async def generate_via_browser(self, headless: bool = True, timeout: int = 30) -> bool:
         try:

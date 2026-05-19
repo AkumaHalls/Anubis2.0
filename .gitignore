@@ -173,6 +173,8 @@ application.yml
 /.ytdl_cache/
 /config.json
 /guild_bots.json
+youtube_cookies.txt
+youtube_cookies_user.txt
 
 # Dashboard / Logs
 lavalink/logs/

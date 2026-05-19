@@ -6935,23 +6935,46 @@ class Music(commands.Cog):
                                 import yt_dlp as _ydl
                                 _xtra = dict(_ycm.get_ytdl_extractor_args())
                                 _cfile = _ycm.get_ytdl_cookiefile()
-                                _opts = {
-                                    'format': 'bestaudio/best',
-                                    'noplaylist': True,
-                                    'nocheckcertificate': True,
-                                    'quiet': True,
-                                    'no_warnings': True,
-                                    'extract_flat': 'in_playlist',
-                                    'cookiefile': _cfile,
-                                    'extractor_args': _xtra,
-                                }
-                                _proxy_url = _ycm.get_ytdl_proxy()
-                                if _proxy_url:
-                                    _opts['proxy'] = _proxy_url
-                                raw = await self.bot.loop.run_in_executor(
-                                    None, lambda: _ydl.YoutubeDL(_opts).extract_info(query, download=False)
-                                )
-                                if raw and raw.get('url'):
+
+                                _player_clients = [
+                                    ['android', 'android_music', 'android_creator', 'web', 'web_creator'],
+                                    ['android', 'android_music', 'android_creator'],
+                                    ['android_creator'],
+                                ]
+
+                                _success = False
+
+                                for _clients in _player_clients:
+                                    _opts = {
+                                        'format': 'bestaudio/best',
+                                        'noplaylist': True,
+                                        'nocheckcertificate': True,
+                                        'quiet': True,
+                                        'no_warnings': True,
+                                        'cachedir': "./.ytdl_cache",
+                                        'extractor_args': dict(_xtra) if _xtra else {},
+                                        'retries': 3,
+                                        'socket_timeout': 15,
+                                    }
+                                    if _opts['extractor_args'].get('youtube'):
+                                        _opts['extractor_args']['youtube']['player_client'] = _clients
+                                    if _cfile:
+                                        _opts['cookiefile'] = _cfile
+                                    _proxy_url = _ycm.get_ytdl_proxy()
+                                    if _proxy_url:
+                                        _opts['proxy'] = _proxy_url
+
+                                    try:
+                                        raw = await self.bot.loop.run_in_executor(
+                                            None, lambda: _ydl.YoutubeDL(_opts).extract_info(query, download=False)
+                                        )
+                                        if raw and raw.get('url'):
+                                            _success = True
+                                            break
+                                    except Exception:
+                                        continue
+
+                                if _success:
                                     t = PartialTrack(
                                         uri=raw['url'],
                                         title=raw.get('title', 'Unknown'),
@@ -7310,40 +7333,47 @@ def setup(bot: BotCore):
 
     if bot.config["USE_YTDL"] and not hasattr(bot.pool, 'ytdl'):
 
-        from yt_dlp import YoutubeDL
+        from utils.music.youtube_cookie_manager import youtube_cookie_manager as _ycm
 
-        bot.pool.ytdl = YoutubeDL(
-            {
-                'extract_flat': True,
-                'quiet': True,
-                'no_warnings': True,
-                'lazy_playlist': True,
-                'simulate': True,
-                'cachedir': "./.ytdl_cache",
-                'allowed_extractors': [
-                    r'.*youtube.*',
-                    r'.*soundcloud.*',
-                ],
-                'extractor_args': {
-                    'youtube': {
-                        'skip': [
-                            'hls',
-                            'dash',
-                            'translated_subs'
-                        ],
-                        'player_skip': [
-                            'js',
-                            'configs',
-                            'webpage'
-                        ],
-                        'player_client': ['android_creator'],
-                        'max_comments': [0],
-                    },
-                    'youtubetab': {
-                        "skip": ["webpage"]
-                    }
+        _cfile = _ycm.get_ytdl_cookiefile()
+        _xtra = dict(_ycm.get_ytdl_extractor_args())
+        _proxy = _ycm.get_ytdl_proxy()
+
+        ydl_opts = {
+            'extract_flat': True,
+            'quiet': True,
+            'no_warnings': True,
+            'lazy_playlist': True,
+            'simulate': True,
+            'cachedir': "./.ytdl_cache",
+            'allowed_extractors': [
+                r'.*youtube.*',
+                r'.*soundcloud.*',
+            ],
+            'extractor_args': {
+                'youtube': {
+                    'skip': ['hls', 'dash', 'translated_subs'],
+                    'player_skip': ['js', 'configs', 'webpage'],
+                    'player_client': ['android_creator'],
+                    'max_comments': [0],
+                },
+                'youtubetab': {
+                    "skip": ["webpage"]
                 }
             }
-        )
+        }
+
+        if _cfile:
+            ydl_opts['cookiefile'] = _cfile
+        if _proxy:
+            ydl_opts['proxy'] = _proxy
+
+        yt_xtra = ydl_opts['extractor_args']['youtube']
+        if _xtra:
+            yt_xtra['po_token'] = _xtra.get('po_token', _ycm.po_token or [])
+            yt_xtra['visitor_data'] = _xtra.get('visitor_data', _ycm.visitor_data or [])
+
+        from yt_dlp import YoutubeDL
+        bot.pool.ytdl = YoutubeDL(ydl_opts)
 
     bot.add_cog(Music(bot))
