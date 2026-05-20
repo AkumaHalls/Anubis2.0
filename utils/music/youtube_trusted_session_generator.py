@@ -17,7 +17,7 @@ YOUTUBE_URLS = [
     "https://www.youtube.com/",
 ]
 
-CHROME_VERSIONS = ["130", "131", "132", "133", "134"]
+CHROME_VERSIONS = ["130", "131", "132", "133", "134", "135"]
 
 
 class YouTubeSessionGenerator:
@@ -28,7 +28,8 @@ class YouTubeSessionGenerator:
         self._data: dict = {}
 
     async def _try_extract_from_page(self, page_source: str) -> Optional[dict]:
-        for match in re.finditer(r'ytcfg\.set\s*\(\s*({.*?})\s*\)\s*;', page_source, re.DOTALL):
+        # 1) Try ytcfg.set() pattern
+        for match in re.finditer(r'ytcfg\.set\s*\(\s*(\{.*?\})\s*\)\s*;', page_source, re.DOTALL):
             try:
                 cfg = json.loads(match.group(1))
                 vd = cfg.get('VISITOR_DATA') or cfg.get('visitorData')
@@ -37,11 +38,8 @@ class YouTubeSessionGenerator:
             except Exception:
                 continue
 
-        for match in re.finditer(r'visitorData["\']\s*:\s*["\']([^"\']+)["\']', page_source):
-            vd = match.group(1)
-            return {"visitor_data": vd, "po_token": ""}
-
-        ytcfg_match = re.search(r'ytcfg\.data_\.data_\s*=\s*({.*?})\s*;', page_source, re.DOTALL)
+        # 2) Try ytcfg.data_.data_ = pattern
+        ytcfg_match = re.search(r'ytcfg\.data_\.data_\s*=\s*(\{.*?\})\s*;', page_source, re.DOTALL)
         if ytcfg_match:
             try:
                 cfg = json.loads(ytcfg_match.group(1))
@@ -50,6 +48,28 @@ class YouTubeSessionGenerator:
                     return {"visitor_data": vd, "po_token": cfg.get('PO_TOKEN', '')}
             except Exception:
                 pass
+
+        # 3) Try searching inside ytInitialData or ytInitialPlayerResponse
+        for key in ("ytInitialData", "ytInitialPlayerResponse"):
+            pattern = rf'{re.escape(key)}\s*=\s*(\{{.*?\}})\s*;'
+            for match in re.finditer(pattern, page_source, re.DOTALL):
+                try:
+                    data = json.loads(match.group(1))
+                    # Try to find visitorData nested in responseContext
+                    rc = data.get("responseContext", {})
+                    vd = rc.get("visitorData") or rc.get("serviceTrackingParams", [{}])[0].get("params", [{}])[0].get("value")
+                    if vd:
+                        return {"visitor_data": vd, "po_token": ""}
+                except Exception:
+                    continue
+
+        # 4) Try direct visitorData in page source
+        for match in re.finditer(r'"visitorData"\s*:\s*"([^"]+)"', page_source):
+            return {"visitor_data": match.group(1), "po_token": ""}
+
+        # 5) Try legacy inline pattern
+        for match in re.finditer(r'visitorData["\']\s*:\s*["\']([^"\']+)["\']', page_source):
+            return {"visitor_data": match.group(1), "po_token": ""}
 
         return None
 
@@ -83,17 +103,12 @@ class YouTubeSessionGenerator:
                             self._data = data
                             self.visitor_data = data.get("visitor_data")
                             self.po_token = data.get("po_token", "")
-                            if self.po_token:
+                            if self.visitor_data:
                                 self._success = True
                                 logger.info(
                                     "Sessao YouTube gerada via HTTP: visitor_data=%s... po_token=%s...",
                                     (self.visitor_data or "")[:20],
                                     (self.po_token or "")[:20],
-                                )
-                            else:
-                                logger.info(
-                                    "Sessao YouTube parcial via HTTP (sem po_token): visitor_data=%s...",
-                                    (self.visitor_data or "")[:20],
                                 )
                             return data
             except Exception as e:
@@ -285,86 +300,102 @@ class YouTubeSessionGenerator:
 
         return {}
 
-    async def generate_via_ytdlp(self, timeout: int = 15) -> dict:
+    async def generate_via_ytdlp(self, timeout: int = 20) -> dict:
         try:
             import yt_dlp
         except ImportError:
             logger.debug("yt-dlp nao disponivel para extracao de sessao")
             return {}
 
-        try:
-            ydl_opts = {
-                "quiet": True,
-                "no_warnings": True,
-                "extract_flat": True,
-                "skip_download": True,
-                "timeout": timeout,
-                "extractor_args": {
-                    "youtube": {
-                        "player_client": ["android", "web"],
-                        "max_comments": ["0"],
-                    }
-                },
-            }
+        _user_cookie = os.path.join(os.getcwd(), "youtube_cookies_user.txt")
+        if not os.path.isfile(_user_cookie):
+            _env_cookies = os.environ.get("YT_USER_COOKIES", "").strip()
+            if _env_cookies:
+                try:
+                    with open(_user_cookie, "w", encoding="utf-8") as _f:
+                        _f.write(_env_cookies)
+                    logger.info("Cookies restaurados de YT_USER_COOKIES em generate_via_ytdlp")
+                except Exception:
+                    pass
 
-            _user_cookie = os.path.join(os.getcwd(), "youtube_cookies_user.txt")
-            if not os.path.isfile(_user_cookie):
-                _env_cookies = os.environ.get("YT_USER_COOKIES", "").strip()
-                if _env_cookies:
-                    try:
-                        with open(_user_cookie, "w", encoding="utf-8") as _f:
-                            _f.write(_env_cookies)
-                        logger.info("Cookies restaurados de YT_USER_COOKIES em generate_via_ytdlp")
-                    except Exception:
-                        pass
-            if os.path.isfile(_user_cookie):
-                ydl_opts["cookiefile"] = _user_cookie
+        # Try multiple player client combinations
+        client_combos = [
+            ["android", "android_music", "android_creator", "web", "web_creator", "web_safari"],
+            ["android", "android_music", "android_creator", "web"],
+            ["android", "android_music", "web"],
+            ["android", "web"],
+            ["android"],
+        ]
 
+        for clients in client_combos:
             try:
-                from utils.music.youtube_cookie_manager import youtube_cookie_manager
-                if youtube_cookie_manager.po_token:
-                    ydl_opts["extractor_args"]["youtube"].setdefault("po_token", [youtube_cookie_manager.po_token])
-                if youtube_cookie_manager.visitor_data:
-                    ydl_opts["extractor_args"]["youtube"].setdefault("visitor_data", [youtube_cookie_manager.visitor_data])
-            except Exception:
-                pass
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(
-                    "https://www.youtube.com/watch?v=jNQXAC9IVRw",
-                    download=False,
-                )
-                if info and isinstance(info, dict):
-                    extractor = ydl.get_info_extractor("Youtube")
-                    if hasattr(extractor, '_extract_session_data'):
-                        session_data = extractor._extract_session_data()
-                        if session_data:
-                            vd = session_data.get("visitor_data") or session_data.get("visitorData")
-                            pt = session_data.get("po_token") or session_data.get("poToken")
-                            if vd:
-                                data = {"visitor_data": vd, "po_token": pt or ""}
-                                self._data = data
-                                self.visitor_data = vd
-                                self.po_token = pt or ""
-                                self._success = True
-                                logger.info(
-                                    "Sessao YouTube gerada via yt-dlp: visitor_data=%s... po_token=%s...",
-                                    vd[:20], (pt or "")[:20],
-                                )
-                                return data
-            return {}
-        except Exception as e:
-            logger.debug("Falha ao extrair sessao via yt-dlp: %s", e)
-            return {}
+                ydl_opts = {
+                    "quiet": True,
+                    "no_warnings": True,
+                    "extract_flat": True,
+                    "skip_download": True,
+                    "socket_timeout": timeout,
+                    "extractor_args": {
+                        "youtube": {
+                            "player_client": clients,
+                            "max_comments": ["0"],
+                        }
+                    },
+                }
+
+                if os.path.isfile(_user_cookie):
+                    ydl_opts["cookiefile"] = _user_cookie
+
+                try:
+                    from utils.music.youtube_cookie_manager import youtube_cookie_manager
+                    if youtube_cookie_manager.po_token:
+                        ydl_opts["extractor_args"]["youtube"].setdefault("po_token", [youtube_cookie_manager.po_token])
+                    if youtube_cookie_manager.visitor_data:
+                        ydl_opts["extractor_args"]["youtube"].setdefault("visitor_data", [youtube_cookie_manager.visitor_data])
+                except Exception:
+                    pass
+
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(
+                        "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+                        download=False,
+                    )
+                    if info and isinstance(info, dict):
+                        extractor = ydl.get_info_extractor("Youtube")
+                        if hasattr(extractor, '_extract_session_data'):
+                            session_data = extractor._extract_session_data()
+                            if session_data:
+                                vd = session_data.get("visitor_data") or session_data.get("visitorData")
+                                pt = session_data.get("po_token") or session_data.get("poToken")
+                                if vd:
+                                    data = {"visitor_data": vd, "po_token": pt or ""}
+                                    self._data = data
+                                    self.visitor_data = vd
+                                    self.po_token = pt or ""
+                                    self._success = True
+                                    logger.info(
+                                        "Sessao YouTube gerada via yt-dlp (clients=%s): visitor_data=%s... po_token=%s...",
+                                        clients, vd[:20], (pt or "")[:20],
+                                    )
+                                    return data
+            except Exception as e:
+                logger.debug("Falha yt-dlp com clients %s: %s", clients, e)
+                continue
+
+        return {}
 
     async def generate(self, headless: bool = True, timeout: int = 30) -> dict:
-        data = await self.generate_via_http(timeout=timeout)
-        if data and data.get("visitor_data"):
-            return data
-
+        # 1) yt-dlp is most reliable -> try first
         data = await self.generate_via_ytdlp(timeout=timeout)
         if data and data.get("visitor_data"):
             return data
 
+        # 2) HTTP extraction as light fallback
+        data = await self.generate_via_http(timeout=timeout)
+        if data and data.get("visitor_data"):
+            return data
+
+        # 3) browser as last resort
         data = await self.generate_via_browser(headless=headless, timeout=timeout)
         return data
 

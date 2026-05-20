@@ -1,7 +1,9 @@
 import asyncio
+import json
 import logging
 import os
 import time
+import traceback
 from typing import Optional
 
 logger = logging.getLogger("youtube_cookies")
@@ -30,10 +32,6 @@ def _ensure_cookie_file(visitor_data: str = "", po_token: str = ""):
         "# Gerado pelo Anubis Cookie Manager",
         ".youtube.com\tTRUE\t/\tTRUE\t{expiry}\tCONSENT\tYES+shp.gws-20250421-0-RC2.en+FX+126".format(expiry=expiry),
         ".youtube.com\tTRUE\t/\tFALSE\t{expiry}\tSOCS\tCAISNQgEEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyX3Jlc3RfcG1lZDBfMjAyNTA0MjE".format(expiry=expiry),
-        ".youtube.com\tTRUE\t/\tFALSE\t{expiry}\t__Secure-3PSIDCC\t".format(expiry=expiry),
-        ".youtube.com\tTRUE\t/\tFALSE\t{expiry}\t__Secure-3PAPISID\t".format(expiry=expiry),
-        ".youtube.com\tTRUE\t/\tFALSE\t{expiry}\t__Secure-3PSID\t".format(expiry=expiry),
-        ".google.com\tTRUE\t/\tTRUE\t{expiry}\tCONSENT\tYES+shp.gws-20250421-0-RC2.en+FX+126".format(expiry=expiry),
     ]
     if visitor_data:
         lines.append(f".youtube.com\tTRUE\t/\tFALSE\t{expiry}\tVISITOR_INFO1_LIVE\t{visitor_data}")
@@ -114,32 +112,53 @@ class YouTubeCookieManager:
         if self.has_token:
             return True
 
-        try:
-            from .youtube_trusted_session_generator import YouTubeSessionGenerator
-            gen = YouTubeSessionGenerator()
+        from .youtube_trusted_session_generator import YouTubeSessionGenerator
+        gen = YouTubeSessionGenerator()
 
+        # 1) Try HTTP extraction (lightest)
+        try:
             data = await gen.generate_via_http(timeout=15)
-            if data:
-                self.visitor_data = data.get("visitor_data") or self.visitor_data
+            if data and data.get("visitor_data"):
+                self.visitor_data = data["visitor_data"]
                 self.po_token = data.get("po_token") or self.po_token
                 self.last_refresh = time.time()
-                _ensure_cookie_file(self.visitor_data or "", self.po_token or "")
-                logger.info("Token YouTube renovado via HTTP direto")
+                _ensure_cookie_file(self.visitor_data, self.po_token or "")
+                logger.info("Token YouTube renovado via HTTP")
                 await self.inject_into_all_nodes(pool)
                 return True
         except Exception:
             pass
 
+        # 2) Try yt-dlp session extraction (most reliable)
+        try:
+            data = await gen.generate_via_ytdlp(timeout=20)
+            if data and data.get("visitor_data"):
+                self.visitor_data = data["visitor_data"]
+                self.po_token = data.get("po_token") or self.po_token
+                self.last_refresh = time.time()
+                _ensure_cookie_file(self.visitor_data, self.po_token or "")
+                logger.info("Token YouTube renovado via yt-dlp")
+                await self.inject_into_all_nodes(pool)
+                return True
+        except Exception:
+            pass
+
+        # 3) Try to get from existing Lavalink node (circular but may work if another bot already has it)
         for bot in pool.get_all_bots():
             for node in bot.music.nodes.values():
                 if not node.is_available:
                     continue
-                ok = await self.refresh_from_lavalink(node.rest_uri, node.password, node.session)
-                if ok:
-                    await self.inject_into_node(node)
-                    return True
+                try:
+                    ok = await self.refresh_from_lavalink(node.rest_uri, node.password, node.session)
+                    if ok:
+                        await self.inject_into_node(node)
+                        logger.info("Token YouTube obtido do node Lavalink %s", node.identifier)
+                        return True
+                except Exception:
+                    pass
                 await asyncio.sleep(1)
 
+        logger.warning("Nao foi possivel obter token YouTube por nenhum metodo")
         return False
 
     async def inject_into_all_nodes(self, pool):
@@ -179,21 +198,33 @@ class YouTubeCookieManager:
     async def inject_into_node(self, node) -> bool:
         if not self.has_token:
             return False
-        try:
-            async with node.session.post(
-                url=f"{node.rest_uri}/youtube",
-                json={
-                    "poToken": self.po_token,
-                    "visitorData": self.visitor_data,
-                },
-                headers={"Authorization": node.password},
-                timeout=15,
-            ) as r:
-                if r.status == 200:
-                    logger.info("PO Token injetado no node %s", node.rest_uri)
-                    return True
-        except Exception:
-            pass
+
+        for attempt in range(3):
+            try:
+                async with node.session.post(
+                    url=f"{node.rest_uri}/youtube",
+                    json={
+                        "poToken": self.po_token,
+                        "visitorData": self.visitor_data,
+                    },
+                    headers={"Authorization": node.password},
+                    timeout=15,
+                ) as r:
+                    if r.status == 200:
+                        logger.info("Token YouTube injetado no node %s (attempt %d)", node.rest_uri, attempt + 1)
+                        return True
+                    body = await r.text()
+                    logger.warning(
+                        "Falha ao injetar token no node %s (attempt %d): %s - %s",
+                        node.rest_uri, attempt + 1, r.status, body[:200],
+                    )
+            except asyncio.TimeoutError:
+                logger.warning("Timeout ao injetar token no node %s (attempt %d)", node.rest_uri, attempt + 1)
+            except Exception as e:
+                logger.warning("Erro ao injetar token no node %s (attempt %d): %s", node.rest_uri, attempt + 1, e)
+            await asyncio.sleep(2)
+
+        logger.error("Falha ao injetar token YouTube apos 3 tentativas no node %s", node.rest_uri)
         return False
 
     async def start_periodic_refresh(self, pool, interval: int = 3600):

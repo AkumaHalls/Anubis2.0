@@ -250,22 +250,33 @@ class Node:
             if youtube_cookie_manager.has_token:
                 await youtube_cookie_manager.inject_into_node(self)
                 return
-            rest = self.rest_uri
-            pw = self.password
-            sess = self.session
-            ok = await youtube_cookie_manager.refresh_from_lavalink(rest, pw, sess)
-            if ok:
+
+            if await youtube_cookie_manager.refresh_from_lavalink(self.rest_uri, self.password, self.session):
+                await youtube_cookie_manager.inject_into_node(self)
+                return
+
+            # Try to generate fresh tokens via yt-dlp or HTTP
+            from utils.music.youtube_trusted_session_generator import YouTubeSessionGenerator
+            gen = YouTubeSessionGenerator()
+
+            data = await gen.generate_via_ytdlp(timeout=15)
+            if not data or not data.get("visitor_data"):
+                data = await gen.generate_via_http(timeout=10)
+
+            if data and data.get("visitor_data"):
+                youtube_cookie_manager.visitor_data = data["visitor_data"]
+                youtube_cookie_manager.po_token = data.get("po_token") or youtube_cookie_manager.po_token
+                youtube_cookie_manager.last_refresh = datetime.datetime.utcnow().timestamp()
                 await youtube_cookie_manager.inject_into_node(self)
         except Exception:
             pass
 
     async def refresh_potoken(self, sandbox=True, browser_executable_path=None):
 
-        try:
-            data = await Browser().generate(headless=sandbox is True, timeout=45)
-        except Exception as e:
-            traceback.print_exc()
-            data = {}
+        from utils.music.youtube_trusted_session_generator import YouTubeSessionGenerator
+        gen = YouTubeSessionGenerator()
+
+        data = await gen.generate(headless=sandbox is True, timeout=45)
 
         if data and data.get("visitor_data"):
             async with self.session.post(url=f"{self.rest_uri}/youtube",

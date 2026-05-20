@@ -218,15 +218,20 @@ def run_lavalink(
         try:
             with open("application.yml", "r", encoding="utf-8") as f:
                 content = f.read()
-            old_line = 'refreshToken: ""'
-            new_line = f'refreshToken: "{yt_oauth_refresh_token}"'
-            if old_line in content:
-                content = content.replace(old_line, new_line)
-                with open("application.yml", "w", encoding="utf-8") as f:
-                    f.write(content)
-                print("OAuth2 refresh token configurado no application.yml")
-            else:
-                print("AVISO: Não foi possível localizar 'refreshToken' no application.yml para configurar OAuth2")
+
+            # Enable OAuth and set token - handle both possible field names
+            for old_line in ('refreshToken: ""', 'token: ""'):
+                if old_line in content:
+                    new_line = old_line.replace('""', f'"{yt_oauth_refresh_token}"')
+                    content = content.replace(old_line, new_line)
+                    break
+
+            # Also ensure oauth is enabled
+            content = content.replace('enabled: false', 'enabled: true', 1)
+
+            with open("application.yml", "w", encoding="utf-8") as f:
+                f.write(content)
+            print("OAuth2 configurado com token no application.yml")
         except Exception as e:
             print(f"AVISO: Erro ao configurar OAuth2 no application.yml: {e}")
 

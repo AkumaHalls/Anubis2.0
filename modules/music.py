@@ -6809,10 +6809,7 @@ class Music(commands.Cog):
         tracks = []
 
         if bool(sc_recommended.search(query)):
-            try:
-                info = await bot.loop.run_in_executor(None, lambda: self.bot.pool.ytdl.extract_info(query, download=False))
-            except AttributeError:
-                raise GenericError("**O uso do yt-dlp está desativado...**")
+            info = await bot.loop.run_in_executor(None, lambda: self.bot.pool.ytdl.extract_info(query, download=False))
 
             playlist = PartialPlaylist(url=info["webpage_url"], data={"playlistInfo": {"name": info["title"]}})
 
@@ -6832,184 +6829,105 @@ class Music(commands.Cog):
             tracks = await self.bot.pool.deezer.get_tracks(url=query, requester=user.id, search=False)
 
         if not tracks:
-
             tracks = await self.bot.pool.spotify.get_tracks(self.bot, user.id, query, search=False)
 
-            if not tracks:
+        if tracks:
+            return tracks, node
 
+        # ─── YouTube URL → usa yt-dlp como método PRIMÁRIO ─────────────────
+        is_yt_url = query.lower().startswith(
+            ("https://youtu.be", "https://www.youtube.com", "https://music.youtube.com")
+        )
+
+        if is_yt_url:
+
+            if "&list=" in query or "/playlist?" in query:
+                tracks = await self.bot.pool.ytdl.extract_youtube_playlist(query, user.id, loop=bot.loop)
+            else:
+                # Clean URL
+                query = query.split("?")[0].replace("/live/", "/watch?v=") if "/live/" in query else query.split("&")[0]
+                tracks = await self.bot.pool.ytdl.extract_youtube_track(query, user.id, loop=bot.loop)
+
+            if tracks:
                 if not node:
-                    nodes = sorted([n for n in bot.music.nodes.values() if n.is_available and n.available],
-                                   key=lambda n: len(n.players))
-                else:
-                    nodes = sorted([n for n in bot.music.nodes.values() if n != node and n.is_available and n.available],
-                                   key=lambda n: len(n.players))
-                    nodes.insert(0, node)
+                    nodes = [n for n in bot.music.nodes.values() if n.is_available and n.available]
+                    node = nodes[0] if nodes else node
+                return tracks, node
 
-                if not nodes:
-                    raise GenericError("**Não há servidores de música disponível!**")
+        # ─── Para URLs não-YouTube / buscas por texto → Lavalink ───────────
+        if not node:
+            nodes = sorted([n for n in bot.music.nodes.values() if n.is_available and n.available],
+                           key=lambda n: len(n.players))
+        else:
+            nodes = sorted([n for n in bot.music.nodes.values() if n != node and n.is_available and n.available],
+                           key=lambda n: len(n.players))
+            nodes.insert(0, node)
 
-                exceptions = set()
+        if not nodes:
+            raise GenericError("**Não há servidores de música disponível!**")
 
-                tracks = []
+        exceptions = set()
+        tracks = []
 
-                is_yt_source = query.lower().startswith(
-                    ("https://youtu.be", "https://www.youtube.com", "https://music.youtube.com")
-                )
+        for n in nodes:
+            node_retry = False
 
-                for n in nodes:
+            if source is False:
+                providers = [n.search_providers[:1]]
+            elif source:
+                providers = [s for s in n.search_providers if s != source]
+                providers.insert(0, source)
+            else:
+                source = True
+                providers = n.search_providers
 
-                    node_retry = False
+            for search_provider in providers:
+                try:
+                    search_query = f"{search_provider}:{query}" if source else query
+                    tracks = await n.get_tracks(
+                        search_query, track_cls=LavalinkTrack, playlist_cls=LavalinkPlaylist, requester=user.id
+                    )
+                except Exception as e:
+                    exceptions.add(repr(e))
+                    if not isinstance(e, wavelink.TrackNotFound):
+                        print(f"Falha ao processar busca...\n{query}\n{traceback.format_exc()}")
+                    continue
 
-                    if source is False:
-                        providers = [n.search_providers[:1]]
-                        if query.startswith("https://www.youtube.com/live/"):
-                            query = query.split("?")[0].replace("/live/", "/watch?v=")
+                if tracks or not source:
+                    break
 
-                        elif query.startswith("https://listen.tidal.com/album/") and "/track/" in query:
-                            query = f"http://www.tidal.com/track/{query.split('/track/')[-1]}"
+            if not node_retry:
+                node = n
+                break
 
-                        elif query.startswith(("https://youtu.be/", "https://www.youtube.com/")):
+        # ─── Fallback: tenta Deezer/Spotify como busca textual ────────────
+        if not tracks:
+            try:
+                tracks = (await self.bot.pool.deezer.get_tracks(url=query, requester=user.id, search=True) or
+                          await self.bot.pool.spotify.get_tracks(self.bot, user.id, query, search=True))
+            except Exception as e:
+                exceptions.add(repr(e))
 
-                            for p in ("&ab_channel=", "&start_radio="):
-                                if p in query:
-                                    try:
-                                        query = f'https://www.youtube.com/watch?v={re.search(r"v=([a-zA-Z0-9_-]+)", query).group(1)}'
-                                    except:
-                                        pass
-                                    break
-                    elif source:
-                        providers = [s for s in n.search_providers if s != source]
-                        providers.insert(0, source)
-                    else:
-                        source = True
-                        providers = n.search_providers
+        # ─── Fallback: tenta yt-dlp como busca YouTube ─────────────────────
+        if not tracks and self.bot.config.get("USE_YTDL", True):
+            try:
+                tracks = await self.bot.pool.ytdl.search_youtube(query, user.id, loop=bot.loop)
+            except Exception as e:
+                exceptions.add(repr(e))
 
-                    for search_provider in providers:
+        if not tracks:
+            txt = "\n".join(exceptions)
+            if txt:
+                if "This track is not readable. Available countries:" in txt:
+                    txt = "A música informada não está disponível na minha região atual..."
+                raise GenericError(f"**Ocorreu um erro ao processar sua busca:** \n{txt}", error=txt)
+            raise GenericError("**Não houve resultados para sua busca.**")
 
-                        try:
-                            search_query = f"{search_provider}:{query}" if source else query
-                            tracks = await n.get_tracks(
-                                search_query, track_cls=LavalinkTrack, playlist_cls=LavalinkPlaylist, requester=user.id
-                            )
-                        except Exception as e:
-                            exceptions.add(repr(e))
-                            if [e for e in ("Video returned by YouTube isn't what was requested", "The video returned is not what was requested.") if e in str(e)]:
-
-                                if is_yt_source and n.version > 3:
-                                    try:
-                                        n.search_providers.remove("ytsearch")
-                                    except:
-                                        pass
-                                    try:
-                                        n.search_providers.remove("ytmsearch")
-                                    except:
-                                        pass
-
-                                if is_yt_source:
-                                    node_retry = True
-                                    break
-
-                            if not isinstance(e, wavelink.TrackNotFound):
-                                print(f"Falha ao processar busca...\n{query}\n{traceback.format_exc()}")
-
-                        if tracks or not source:
-                            break
-
-                    if not node_retry:
-                        node = n
-                        break
-
-                if not tracks:
-
-                    try:
-                        tracks = (await self.bot.pool.deezer.get_tracks(url=query, requester=user.id, search=True) or
-                                  await self.bot.pool.spotify.get_tracks(self.bot, user.id, query, search=True))
-                    except Exception as e:
-                        exceptions.add(repr(e))
-
-                    if not tracks:
-
-                        if is_yt_source and self.bot.config.get("USE_YTDL", True):
-                            try:
-                                from utils.music.youtube_cookie_manager import youtube_cookie_manager as _ycm
-                                import yt_dlp as _ydl
-                                _xtra = dict(_ycm.get_ytdl_extractor_args())
-                                _cfile = _ycm.get_ytdl_cookiefile()
-
-                                _player_clients = [
-                                    ['android', 'android_music', 'android_creator', 'web', 'web_creator'],
-                                    ['android', 'android_music', 'android_creator'],
-                                    ['android_creator'],
-                                ]
-
-                                _success = False
-
-                                for _clients in _player_clients:
-                                    _opts = {
-                                        'format': 'bestaudio/best',
-                                        'noplaylist': True,
-                                        'nocheckcertificate': True,
-                                        'quiet': True,
-                                        'no_warnings': True,
-                                        'cachedir': "./.ytdl_cache",
-                                        'extractor_args': dict(_xtra) if _xtra else {},
-                                        'retries': 3,
-                                        'socket_timeout': 15,
-                                    }
-                                    if _opts['extractor_args'].get('youtube'):
-                                        _opts['extractor_args']['youtube']['player_client'] = _clients
-                                    if _cfile:
-                                        _opts['cookiefile'] = _cfile
-                                    _proxy_url = _ycm.get_ytdl_proxy()
-                                    if _proxy_url:
-                                        _opts['proxy'] = _proxy_url
-
-                                    try:
-                                        raw = await self.bot.loop.run_in_executor(
-                                            None, lambda: _ydl.YoutubeDL(_opts).extract_info(query, download=False)
-                                        )
-                                        if raw and raw.get('url'):
-                                            _success = True
-                                            break
-                                    except Exception:
-                                        continue
-
-                                if _success:
-                                    t = PartialTrack(
-                                        uri=raw['url'],
-                                        title=raw.get('title', 'Unknown'),
-                                        author=raw.get('uploader', 'Unknown'),
-                                        thumb=raw.get('thumbnail', ''),
-                                        duration=(raw.get('duration') or 0) * 1000,
-                                        requester=user.id,
-                                        source_name="http",
-                                    )
-                                    t.info["isSeekable"] = True
-                                    tracks = [t]
-                                    node = nodes[0] if nodes else node
-                            except Exception as e:
-                                exceptions.add(repr(e))
-
-                    if not tracks:
-
-                        txt = "\n".join(exceptions)
-
-                        if is_yt_source and "Video returned by YouTube isn't what was requested" in txt:
-                            raise YoutubeSourceDisabled()
-
-                        if txt:
-
-                            if "This track is not readable. Available countries:" in txt:
-                                txt = "A música informada não está disponível na minha região atual..."
-                            raise GenericError(f"**Ocorreu um erro ao processar sua busca:** \n{txt}", error=txt)
-                        raise GenericError("**Não houve resultados para sua busca.**")
-
-                if isinstance(tracks, list):
-                    tracks[0].info["extra"]["track_loops"] = track_loops
-
-                else:
-                    if (selected := tracks.data['playlistInfo']['selectedTrack']) > 0:
-                        tracks.tracks = tracks.tracks[selected:] + tracks.tracks[:selected]
+        if isinstance(tracks, list):
+            tracks[0].info["extra"]["track_loops"] = track_loops
+        else:
+            if (selected := tracks.data['playlistInfo']['selectedTrack']) > 0:
+                tracks.tracks = tracks.tracks[selected:] + tracks.tracks[:selected]
 
         return tracks, node
 
@@ -7332,48 +7250,11 @@ class Music(commands.Cog):
 def setup(bot: BotCore):
 
     if bot.config["USE_YTDL"] and not hasattr(bot.pool, 'ytdl'):
-
+        from utils.music.ytdl_tools import YTDLTools
         from utils.music.youtube_cookie_manager import youtube_cookie_manager as _ycm
-
-        _cfile = _ycm.get_ytdl_cookiefile()
-        _xtra = dict(_ycm.get_ytdl_extractor_args())
-        _proxy = _ycm.get_ytdl_proxy()
-
-        ydl_opts = {
-            'extract_flat': True,
-            'quiet': True,
-            'no_warnings': True,
-            'lazy_playlist': True,
-            'simulate': True,
-            'cachedir': "./.ytdl_cache",
-            'allowed_extractors': [
-                r'.*youtube.*',
-                r'.*soundcloud.*',
-            ],
-            'extractor_args': {
-                'youtube': {
-                    'skip': ['hls', 'dash', 'translated_subs'],
-                    'player_skip': ['js', 'configs', 'webpage'],
-                    'player_client': ['android_creator'],
-                    'max_comments': [0],
-                },
-                'youtubetab': {
-                    "skip": ["webpage"]
-                }
-            }
-        }
-
-        if _cfile:
-            ydl_opts['cookiefile'] = _cfile
-        if _proxy:
-            ydl_opts['proxy'] = _proxy
-
-        yt_xtra = ydl_opts['extractor_args']['youtube']
-        if _xtra:
-            yt_xtra['po_token'] = _xtra.get('po_token', _ycm.po_token or [])
-            yt_xtra['visitor_data'] = _xtra.get('visitor_data', _ycm.visitor_data or [])
-
-        from yt_dlp import YoutubeDL
-        bot.pool.ytdl = YoutubeDL(ydl_opts)
+        bot.pool.ytdl = YTDLTools(
+            cookiefile=_ycm.get_ytdl_cookiefile(),
+            proxy=_ycm.get_ytdl_proxy() or "",
+        )
 
     bot.add_cog(Music(bot))

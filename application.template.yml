@@ -28,7 +28,7 @@ plugins:
   youtube:
     enabled: true
     oauth:
-      enabled: false
+      enabled: true
       allowSearch: true
       token: ""
 

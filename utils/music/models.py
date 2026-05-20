@@ -944,6 +944,7 @@ class LavalinkPlayer(wavelink.Player):
                     await self.play(track=track, start=self.position)
                 return
 
+            is_sign_in_error = "Sign in to confirm" in (event.cause or "")
             if (youtube_exception := (event.error == "This IP address has been blocked by YouTube (429)" or
                 #event.message == "Video returned by YouTube isn't what was requested" or
                 event.cause.startswith(("java.lang.RuntimeException: Not success status code: 403",
@@ -993,6 +994,14 @@ class LavalinkPlayer(wavelink.Player):
                 self.retries_403 = {"last_time": None, 'counter': 0}
 
                 if youtube_exception:
+
+                    if is_sign_in_error or "403" in (event.cause or ""):
+                        try:
+                            from utils.music.youtube_cookie_manager import youtube_cookie_manager
+                            if not youtube_cookie_manager.has_token:
+                                self.bot.loop.create_task(youtube_cookie_manager.refresh_token_any(self.bot.pool))
+                        except Exception:
+                            pass
 
                     with suppress(IndexError, ValueError):
                         self.node.search_providers.remove("ytsearch")
